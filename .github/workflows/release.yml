@@ -45,7 +45,7 @@ jobs:
           tags: |
             type=raw,value=${{ steps.v.outputs.tag }}
           labels: |
-            org.opencontainers.image.source=https://github.com/bestpracticifyco/plane
+            org.opencontainers.image.source=https://github.com/bestpracticifyco/plane-bp
             org.opencontainers.image.description=Plane Community Edition fork with plane_ext (${{ matrix.image }})
             org.opencontainers.image.licenses=AGPL-3.0-only
             org.opencontainers.image.version=${{ steps.v.outputs.tag }}

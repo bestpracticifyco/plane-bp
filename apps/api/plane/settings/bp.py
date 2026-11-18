@@ -30,6 +30,6 @@ PLANE_EXT = {
     "HANDOFF_TOKEN_TTL_SECONDS": 300,
     "HANDOFF_SIGNING_KEY": os.environ.get("EXT_HANDOFF_SIGNING_KEY", ""),
     "GOVERNOR_BASE_URL": os.environ.get("GOVERNOR_BASE_URL", ""),
-    "SOURCE_REPO_URL": "https://github.com/bestpracticifyco/plane",
+    "SOURCE_REPO_URL": "https://github.com/bestpracticifyco/plane-bp",
     "VERSION": os.environ.get("APP_RELEASE_TAG", "dev"),
 }

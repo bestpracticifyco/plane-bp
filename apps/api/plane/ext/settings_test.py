@@ -11,6 +11,6 @@ PLANE_EXT = {
     "HANDOFF_TOKEN_TTL_SECONDS": 300,
     "HANDOFF_SIGNING_KEY": "test-signing-key-not-secret",
     "GOVERNOR_BASE_URL": "https://example.invalid/governor",
-    "SOURCE_REPO_URL": "https://github.com/bestpracticifyco/plane",
+    "SOURCE_REPO_URL": "https://github.com/bestpracticifyco/plane-bp",
     "VERSION": "test",
 }
