@@ -10,11 +10,13 @@ user-initiated saves (a request user is present) to avoid breaking background ta
 """
 
 from crum import get_current_user
-from django.db.models.signals import pre_save
+from django.db import transaction
+from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from plane.db.models import Issue, State
+from plane.db.models import Issue, Project, ProjectMember, State, WorkspaceMember
 
 from . import services
 
@@ -42,3 +44,86 @@ def required_property_guard(sender, instance, **kwargs):
             errors.append(f"Set required properties first: {', '.join(missing)}")
         if errors:
             raise ValidationError({"state_id": errors})
+
+
+# ---------------------------------------------------------------------------------------------
+# Project-level access hardening (flag ext.access_hardening)
+# ---------------------------------------------------------------------------------------------
+@receiver(pre_save, sender=Project, dispatch_uid="plane_ext_private_by_default")
+def private_by_default(sender, instance, **kwargs):
+    """New projects start Private (Secret), however they are created (web, API, Governor)."""
+    if instance._state.adding and instance.workspace_id and services.is_enabled(
+        instance.workspace_id, "ext.access_hardening"
+    ):
+        instance.network = 0
+
+
+@receiver(pre_save, sender=ProjectMember, dispatch_uid="plane_ext_project_role_cap")
+def project_role_cap(sender, instance, **kwargs):
+    """A project role may not exceed the person's workspace role. Upstream's web path checks this; the
+    public API (api/v1 projects/<id>/members/) does not, so a workspace Guest could be made project Admin."""
+    if not instance.member_id or not instance.is_active or not instance.workspace_id:
+        return
+    if not services.is_enabled(instance.workspace_id, "ext.access_hardening"):
+        return
+    ws_role = (
+        WorkspaceMember.objects.filter(workspace_id=instance.workspace_id, member_id=instance.member_id, is_active=True)
+        .values_list("role", flat=True)
+        .first()
+    )
+    if ws_role is not None and instance.role > ws_role:
+        raise ValidationError({"role": ["A project role cannot be higher than the person's workspace role."]})
+
+
+@receiver(post_save, sender=WorkspaceMember, dispatch_uid="plane_ext_apply_pending_grants")
+def apply_pending_grants(sender, instance, **kwargs):
+    """Someone joined (or was reactivated): put them in the projects pre-assigned on the access page."""
+    if not instance.is_active or not instance.member_id:
+        return
+    from . import access
+
+    transaction.on_commit(lambda: access.apply_grants_for(instance.workspace, instance.member))
+
+
+# ---------------------------------------------------------------------------------------------
+# Recurring work items (flag ext.recurrence)
+# ---------------------------------------------------------------------------------------------
+@receiver(pre_save, sender=Issue, dispatch_uid="plane_ext_recurrence_due_watch")
+def recurrence_due_watch(sender, instance, **kwargs):
+    """Plane tracks only state_id on Issue; remember the stored due date for series that follow it."""
+    if instance._state.adding or getattr(instance, "_ext_spawning", False):
+        return
+    from .models import ExtRecurrenceRule
+
+    if ExtRecurrenceRule.objects.filter(
+        current_issue_id=instance.id, ended_at__isnull=True, resync_on_due_change=True
+    ).exists():
+        instance._ext_old_target = Issue.all_objects.filter(id=instance.id).values_list("target_date", flat=True).first()
+
+
+@receiver(post_save, sender=Issue, dispatch_uid="plane_ext_recurrence_trigger")
+def recurrence_trigger(sender, instance, created, **kwargs):
+    """State change -> queue the next instance; due-date change -> optionally re-anchor the series.
+    Bulk updates send no signal; the 5-minute tick sweeps those up."""
+    changed = set(getattr(instance, "_changes_on_save", None) or [])
+    if hasattr(instance, "_ext_old_target"):
+        if instance._ext_old_target != instance.target_date:
+            changed.add("target_date")
+        del instance._ext_old_target
+    if created or getattr(instance, "_ext_spawning", False) or not ({"state_id", "target_date"} & changed):
+        return
+    if not services.is_enabled(instance.workspace_id, "ext.recurrence"):
+        return
+    from . import recurring
+
+    rule = recurring.live_rule(instance)
+    if rule is None:
+        return
+    if "target_date" in changed:
+        recurring.on_due_date_changed(instance)
+    if "state_id" in changed and not rule.paused and recurring.trigger_matches(rule, instance):
+        from .tasks import spawn_recurrence
+
+        reason = "state" if rule.trigger == "state" else "completed"
+        today = timezone.localdate().isoformat()
+        transaction.on_commit(lambda: spawn_recurrence.delay(str(rule.id), reason, today))

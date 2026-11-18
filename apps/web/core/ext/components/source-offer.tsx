@@ -10,7 +10,7 @@
 export function ExtSourceOffer() {
   return (
     <a
-      href="https://github.com/bestpracticifyco/plane#readme"
+      href="https://github.com/bestpracticifyco/plane-bp#readme"
       target="_blank"
       rel="noopener noreferrer"
       title="This instance runs a modified version of Plane (AGPL-3.0). Get the complete source."

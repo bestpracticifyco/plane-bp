@@ -5,7 +5,18 @@
 
 import { API_BASE_URL } from "@plane/constants";
 import { APIService } from "@/services/api.service";
-import type { TExtBinding, TExtDefinition, TExtFlags, TExtValue, TExtValueMap } from "../types";
+import type {
+  TExtAccessCell,
+  TExtAccessMatrix,
+  TExtBinding,
+  TExtDefinition,
+  TExtFlags,
+  TExtRecurrenceInput,
+  TExtRecurrenceRule,
+  TExtRole,
+  TExtValue,
+  TExtValueMap,
+} from "../types";
 
 const BASE = "/api/ext/v1/workspaces";
 
@@ -56,5 +67,36 @@ export class ExtService extends APIService {
     return this.call<{ token: string; expires_at: string; governor_url: string }>(
       this.post(`${BASE}/${ws}/handoff/`, {})
     );
+  }
+  getAccess(ws: string) {
+    return this.call<TExtAccessMatrix>(this.get(`${BASE}/${ws}/access/`));
+  }
+  setAccess(ws: string, cells: TExtAccessCell[]) {
+    return this.call<TExtAccessMatrix & { changed: number }>(this.put(`${BASE}/${ws}/access/`, { cells }));
+  }
+  setGrants(ws: string, email: string, grants: { project_id: string; role: TExtRole }[]) {
+    return this.call<TExtAccessMatrix>(this.put(`${BASE}/${ws}/access/grants/`, { email, grants }));
+  }
+  getRecurrence(ws: string, projectId: string, issueId: string) {
+    return this.call<TExtRecurrenceRule | null>(
+      this.get(`${BASE}/${ws}/projects/${projectId}/work-items/${issueId}/recurrence/`)
+    );
+  }
+  setRecurrence(ws: string, projectId: string, issueId: string, input: TExtRecurrenceInput) {
+    return this.call<TExtRecurrenceRule>(
+      this.put(`${BASE}/${ws}/projects/${projectId}/work-items/${issueId}/recurrence/`, input)
+    );
+  }
+  stopRecurrence(ws: string, projectId: string, issueId: string) {
+    return this.call<null>(this.delete(`${BASE}/${ws}/projects/${projectId}/work-items/${issueId}/recurrence/`));
+  }
+  getProjectRepeats(ws: string, projectId: string) {
+    return this.call<Record<string, string>>(this.get(`${BASE}/${ws}/projects/${projectId}/recurrence/`));
+  }
+  listRecurrence(ws: string) {
+    return this.call<TExtRecurrenceRule[]>(this.get(`${BASE}/${ws}/recurrence/`));
+  }
+  recurrenceAction(ws: string, ruleId: string, action: "pause" | "resume" | "skip" | "stop") {
+    return this.call<TExtRecurrenceRule | null>(this.post(`${BASE}/${ws}/recurrence/${ruleId}/${action}/`, {}));
   }
 }

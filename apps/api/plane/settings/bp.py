@@ -12,6 +12,8 @@ from .production import *  # noqa: F401,F403
 
 INSTALLED_APPS += ["plane.ext"]  # noqa: F405
 ROOT_URLCONF = "plane.ext.urls_root"
+MIDDLEWARE += ["plane.ext.middleware.AccessHardeningMiddleware"]  # noqa: F405  (after auth middleware)
+CELERY_IMPORTS = (*CELERY_IMPORTS, "plane.ext.tasks")  # noqa: F405
 
 # Fail closed (FR-EXT-096): refuse to start without the essentials or with upstream placeholders.
 _REQUIRED = ["SECRET_KEY", "WEB_URL", "LIVE_SERVER_SECRET_KEY"]
@@ -28,6 +30,6 @@ PLANE_EXT = {
     "HANDOFF_TOKEN_TTL_SECONDS": 300,
     "HANDOFF_SIGNING_KEY": os.environ.get("EXT_HANDOFF_SIGNING_KEY", ""),
     "GOVERNOR_BASE_URL": os.environ.get("GOVERNOR_BASE_URL", ""),
-    "SOURCE_REPO_URL": "https://github.com/bestpracticifyco/plane",
+    "SOURCE_REPO_URL": "https://github.com/bestpracticifyco/plane-bp",
     "VERSION": os.environ.get("APP_RELEASE_TAG", "dev"),
 }

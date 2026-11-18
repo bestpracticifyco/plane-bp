@@ -40,6 +40,10 @@
 - Organisation `bestpracticifyco`, default branch `main`, default `GITHUB_TOKEN` read-only.
 - Required: rulesets on `main` and `bp/*` (PR + `ci` checks, including admins); 2FA required
   for members; secret scanning + push protection; actions allowed only when pinned by SHA.
+- 18 Nov 2026: moved from the GitHub fork `bestpracticifyco/plane` to the standalone repository
+  `bestpracticifyco/plane-bp` (same history; branches `main` and `bp/*`; all tags). GitHub Actions
+  stopped creating runs on the fork after 12 Nov, and Free-plan Support could not clear it. The
+  `upstream` remote and release-tag-only tracking are unchanged. The old fork is to be archived.
 
 ## Rebase log
 | Date | From | To | Conflicts | Patch retargets | By |
