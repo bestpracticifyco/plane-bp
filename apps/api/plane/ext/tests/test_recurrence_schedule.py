@@ -113,4 +113,5 @@ def test_summaries():
     assert summary({"freq": "daily", "skip_weekends": True}) == "Daily · Mon–Fri"
     assert summary({"freq": "daily", "weekdays": [0, 1, 2, 3, 6]}) == "Daily · Sun, Mon, Tue, Wed, Thu"
     assert summary({"freq": "daily", "weekdays": list(range(7))}) == "Daily"
+    assert summary({"freq": "monthly", "mode": "last_day", "start": "month_first"}) == "Monthly · last day · starts 1st"
     assert summary({"freq": "days_after", "days": 3}) == "3 days after completion"

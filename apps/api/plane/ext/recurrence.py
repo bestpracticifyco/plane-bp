@@ -15,6 +15,9 @@ A schedule is a small JSON object (stored on ExtRecurrenceRule.schedule):
     {"freq": "yearly",  "interval": 1, "month": 1, "day": 31}
     {"freq": "days_after", "days": 7}                                  # N days after completion
 
+Monthly schedules may add "start": "month_first": each instance starts on the 1st of its due month
+(otherwise an instance keeps the start-to-due span of the one before it).
+
 `anchor` (ISO date) fixes which weeks/months/years count for intervals > 1; it is the series' first due date.
 """
 
@@ -128,6 +131,8 @@ def validate(schedule):
             raise ScheduleError("nth_weekday needs nth (1-5 or -1) and weekday (0-6)")
         if mode == "business_day" and not 1 <= int(s.get("nth") or 0) <= 23:
             raise ScheduleError("business_day needs nth between 1 and 23")
+        if s.get("start") not in (None, "month_first"):
+            raise ScheduleError("start must be month_first")
         if mode == "days":
             s["days"] = sorted({int(x) for x in s.get("days") or []})
             if not s["days"] or any(not 1 <= x <= 31 for x in s["days"]):
@@ -235,9 +240,10 @@ def summary(schedule):
             "business_day": lambda: f"{_ordinal(int(s['nth']))} business day",
             "days": lambda: "days " + " & ".join(str(x) for x in s["days"]),
         }[mode]()
+        starts = " · starts 1st" if s.get("start") == "month_first" else ""
         if mode == "days" and s["days"] == [1, 15] and n == 1:
-            return "Semi-monthly · 1st & 15th"
-        return f"{base} · {detail}"
+            return "Semi-monthly · 1st & 15th" + starts
+        return f"{base} · {detail}{starts}"
     if f == "yearly":
         return every("Yearly", "years") + f" · {calendar.month_abbr[int(s['month'])]} {s['day']}"
     return f"{s['days']} days after completion"

@@ -210,6 +210,22 @@ def test_schedule_on_start_date_keeps_span_and_clears_checklist(people, item, to
         recurring.upsert(item, people["member"], {"run_on": "later"})
 
 
+def test_monthly_start_on_the_first(people, item, todo):
+    item.start_date, item.target_date = D(2026, 11, 1), D(2026, 11, 30)
+    item.save()
+    rule = recurring.upsert(
+        item,
+        people["member"],
+        {"schedule": {"freq": "monthly", "mode": "last_day", "start": "month_first"}, "trigger": "schedule", "run_on": "start"},
+    )
+    assert rule.next_run_at.date() == D(2026, 12, 1)
+    with _today(D(2026, 12, 1)):
+        assert recurring.run_due(rule.next_run_at + dt.timedelta(minutes=1)) == 1
+    rule.refresh_from_db()
+    assert (rule.current_issue.start_date, rule.current_issue.target_date) == (D(2026, 12, 1), D(2026, 12, 31))
+    assert rule.next_run_at.date() == D(2027, 1, 1)
+
+
 def test_schedule_after_downtime_creates_no_past_items(people, item):
     rule = recurring.upsert(item, people["member"], {"schedule": {"freq": "daily"}, "trigger": "schedule"})
     with _today(D(2026, 12, 10)):

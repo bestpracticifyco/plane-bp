@@ -70,6 +70,8 @@ export type TExtSchedule =
       nth?: number;
       weekday?: number;
       days?: number[];
+      /** each instance starts on the 1st of its due month */
+      start?: "month_first";
     }
   | { freq: "yearly"; interval?: number; month: number; day: number }
   | { freq: "days_after"; days: number };

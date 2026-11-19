@@ -39,6 +39,7 @@ type Form = {
   dailyDays: number[];
   weekdays: number[];
   monthMode: MonthMode;
+  startFirst: boolean;
   businessDay: number;
   daysAfter: number;
   trigger: TExtRecurrenceTrigger;
@@ -78,6 +79,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     dailyDays: ALL_DAYS,
     weekdays: [due.weekday],
     monthMode: "same_day",
+    startFirst: false,
     businessDay: 5,
     daysAfter: 7,
     trigger: "completed",
@@ -108,6 +110,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     endDate: rule.end_date ?? "",
     resync: rule.resync_on_due_change,
     interval: s.freq === "days_after" ? 1 : (s.interval ?? 1),
+    startFirst: s.freq === "monthly" && s.start === "month_first",
   };
   if (s.freq === "days_after") return { ...f, preset: "days_after", daysAfter: s.days };
   if (s.freq === "daily")
@@ -138,6 +141,11 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
 }
 
 function toSchedule(f: Form, due: ReturnType<typeof dueFacts>): TExtSchedule {
+  const s = baseSchedule(f, due);
+  return s.freq === "monthly" && f.startFirst ? { ...s, start: "month_first" } : s;
+}
+
+function baseSchedule(f: Form, due: ReturnType<typeof dueFacts>): TExtSchedule {
   const monthly = (interval: number): TExtSchedule => {
     if (f.monthMode === "nth_weekday")
       return { freq: "monthly", interval, mode: "nth_weekday", nth: Math.min(due.nth, 5), weekday: due.weekday };
@@ -381,6 +389,20 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
                   />
                 )}
               </div>
+            </>
+          )}
+
+          {(isMonthly || form.preset === "semimonthly") && (
+            <>
+              <span />
+              <label className="flex items-center gap-2 text-secondary">
+                <input
+                  type="checkbox"
+                  checked={form.startFirst}
+                  onChange={(e) => set("startFirst", e.target.checked)}
+                />
+                Start date on the 1st of the month
+              </label>
             </>
           )}
 

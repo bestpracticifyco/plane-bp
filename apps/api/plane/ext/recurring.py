@@ -201,7 +201,7 @@ def skip_next(rule):
     if issue is None or issue.target_date is None or rule.schedule["freq"] == "days_after":
         raise ValidationError({"rule": ["nothing to skip"]})
     new_due = recurrence.next_after(rule.schedule, issue.target_date, rule.anchor)
-    _move_dates(issue, new_due)
+    _move_dates(rule, issue, new_due)
     issue._ext_spawning = True
     issue.save(update_fields=["start_date", "target_date", "updated_at"])
     if rule.trigger == RecurrenceTrigger.SCHEDULE:
@@ -243,14 +243,22 @@ def _next_run_at(rule, issue):
         return None
     if rule.run_on != "start":
         return _run_at(rule, issue.target_date)
-    span = (issue.target_date - issue.start_date) if issue.start_date else dt.timedelta(0)
-    return _run_at(rule, recurrence.next_after(rule.schedule, issue.target_date, rule.anchor) - span)
+    next_due = recurrence.next_after(rule.schedule, issue.target_date, rule.anchor)
+    return _run_at(rule, _new_start(rule, next_due, issue.start_date, issue.target_date) or next_due)
 
 
-def _move_dates(issue, new_due, old_due=None):
+def _new_start(rule, new_due, old_start, old_due):
+    """Start date of an instance due `new_due`: the 1st of its month (schedule "start": "month_first"),
+    else the same start-to-due span as the instance it follows."""
+    if rule.schedule.get("start") == "month_first":
+        return new_due.replace(day=1)
+    return new_due - (old_due - old_start) if (old_start and old_due) else None
+
+
+def _move_dates(rule, issue, new_due, old_due=None):
     old_due = old_due or issue.target_date
     if issue.start_date and old_due:
-        issue.start_date = new_due - (old_due - issue.start_date)
+        issue.start_date = _new_start(rule, new_due, issue.start_date, old_due)
     issue.target_date = new_due
 
 
@@ -313,7 +321,7 @@ def spawn(rule_id, reason, completed_on=None):
 
 def _reuse(rule, issue, new_due):
     state_id = rule.new_state_id or _default_state_id(issue.project_id)
-    _move_dates(issue, new_due)
+    _move_dates(rule, issue, new_due)
     issue.state_id = state_id
     issue._ext_spawning = True  # not a manual due-date change: no re-anchoring
     issue.save()
@@ -338,7 +346,7 @@ def _copy(rule, src, new_due, parent_id=None, old_due=None):
 
     want = set(rule.copy_fields)
     old_due = old_due or src.target_date
-    start = (new_due - (old_due - src.start_date)) if (src.start_date and old_due) else None
+    start = _new_start(rule, new_due, src.start_date, old_due)
     data = {
         "name": src.name,
         "state_id": str(rule.new_state_id or _default_state_id(src.project_id)),
