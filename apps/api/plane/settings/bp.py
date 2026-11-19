@@ -12,7 +12,10 @@ from .production import *  # noqa: F401,F403
 
 INSTALLED_APPS += ["plane.ext"]  # noqa: F405
 ROOT_URLCONF = "plane.ext.urls_root"
-MIDDLEWARE += ["plane.ext.middleware.AccessHardeningMiddleware"]  # noqa: F405  (after auth middleware)
+MIDDLEWARE += [  # noqa: F405  (after auth middleware)
+    "plane.ext.middleware.AccessHardeningMiddleware",
+    "plane.ext.middleware.RequireModuleMiddleware",
+]
 CELERY_IMPORTS = (*CELERY_IMPORTS, "plane.ext.tasks")  # noqa: F405
 
 # Fail closed (FR-EXT-096): refuse to start without the essentials or with upstream placeholders.
