@@ -101,7 +101,7 @@ def _safe_next_due(r):
     if r.schedule.get("freq") == "days_after" or not r.current_issue or not r.current_issue.target_date:
         return None
     try:
-        return recurrence.next_after(r.schedule, r.current_issue.target_date, r.anchor).isoformat()
+        return recurrence.next_period(r.schedule, r.current_issue.target_date, r.anchor).isoformat()
     except recurrence.ScheduleError:
         return None
 
@@ -200,7 +200,7 @@ def skip_next(rule):
     issue = rule.current_issue
     if issue is None or issue.target_date is None or rule.schedule["freq"] == "days_after":
         raise ValidationError({"rule": ["nothing to skip"]})
-    new_due = recurrence.next_after(rule.schedule, issue.target_date, rule.anchor)
+    new_due = recurrence.next_period(rule.schedule, issue.target_date, rule.anchor)
     _move_dates(rule, issue, new_due)
     issue._ext_spawning = True
     issue.save(update_fields=["start_date", "target_date", "updated_at"])
@@ -243,7 +243,7 @@ def _next_run_at(rule, issue):
         return None
     if rule.run_on != "start":
         return _run_at(rule, issue.target_date)
-    next_due = recurrence.next_after(rule.schedule, issue.target_date, rule.anchor)
+    next_due = recurrence.next_period(rule.schedule, issue.target_date, rule.anchor)
     return _run_at(rule, _new_start(rule, next_due, issue.start_date, issue.target_date) or next_due)
 
 
@@ -290,11 +290,11 @@ def spawn(rule_id, reason, completed_on=None):
         if rule.schedule["freq"] == "days_after":
             new_due = (completed_on or timezone.localdate()) + dt.timedelta(days=rule.schedule["days"])
         else:
-            new_due = recurrence.next_after(rule.schedule, base, rule.anchor)
+            new_due = recurrence.next_period(rule.schedule, base, rule.anchor)
             if rule.trigger == RecurrenceTrigger.SCHEDULE:  # after downtime: no instances in the past
                 today = timezone.localdate(timezone=_tz(rule))
                 while new_due < today:
-                    new_due = recurrence.next_after(rule.schedule, new_due, rule.anchor)
+                    new_due = recurrence.next_period(rule.schedule, new_due, rule.anchor)
         if (rule.end_date and new_due > rule.end_date) or (rule.end_count and rule.occurrences >= rule.end_count):
             rule.ended_at = timezone.now()
             rule.next_run_at = None

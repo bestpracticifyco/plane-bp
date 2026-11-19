@@ -207,6 +207,17 @@ def next_after(schedule, after, anchor=None):
     raise ScheduleError("no occurrence within three years")
 
 
+def next_period(schedule, after, anchor=None):
+    """The next instance of a series whose current instance is due `after`. Monthly schedules (except
+    explicit day lists) have one instance per month, so the search starts after `after`'s month: an item
+    moved off-schedule (a close due Sat 5 Dec under "5th business day") is followed by January's, not
+    by Mon 7 Dec."""
+    s = validate(schedule)
+    if s["freq"] == "monthly" and s["mode"] != "days":
+        after = dt.date(after.year, after.month, calendar.monthrange(after.year, after.month)[1])
+    return next_after(s, after, anchor)
+
+
 def first_on_or_after(schedule, day, anchor=None):
     return next_after(schedule, day - dt.timedelta(days=1), anchor or day)
 
