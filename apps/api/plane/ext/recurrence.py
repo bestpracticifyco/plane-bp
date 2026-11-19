@@ -15,6 +15,9 @@ A schedule is a small JSON object (stored on ExtRecurrenceRule.schedule):
     {"freq": "yearly",  "interval": 1, "month": 1, "day": 31}
     {"freq": "days_after", "days": 7}                                  # N days after completion
 
+Monthly schedules may add "start": "month_first": each instance starts on the 1st of its due month
+(otherwise an instance keeps the start-to-due span of the one before it).
+
 `anchor` (ISO date) fixes which weeks/months/years count for intervals > 1; it is the series' first due date.
 """
 
@@ -128,6 +131,8 @@ def validate(schedule):
             raise ScheduleError("nth_weekday needs nth (1-5 or -1) and weekday (0-6)")
         if mode == "business_day" and not 1 <= int(s.get("nth") or 0) <= 23:
             raise ScheduleError("business_day needs nth between 1 and 23")
+        if s.get("start") not in (None, "month_first"):
+            raise ScheduleError("start must be month_first")
         if mode == "days":
             s["days"] = sorted({int(x) for x in s.get("days") or []})
             if not s["days"] or any(not 1 <= x <= 31 for x in s["days"]):
@@ -202,6 +207,17 @@ def next_after(schedule, after, anchor=None):
     raise ScheduleError("no occurrence within three years")
 
 
+def next_period(schedule, after, anchor=None):
+    """The next instance of a series whose current instance is due `after`. Monthly schedules (except
+    explicit day lists) have one instance per month, so the search starts after `after`'s month: an item
+    moved off-schedule (a close due Sat 5 Dec under "5th business day") is followed by January's, not
+    by Mon 7 Dec."""
+    s = validate(schedule)
+    if s["freq"] == "monthly" and s["mode"] != "days":
+        after = dt.date(after.year, after.month, calendar.monthrange(after.year, after.month)[1])
+    return next_after(s, after, anchor)
+
+
 def first_on_or_after(schedule, day, anchor=None):
     return next_after(schedule, day - dt.timedelta(days=1), anchor or day)
 
@@ -235,9 +251,10 @@ def summary(schedule):
             "business_day": lambda: f"{_ordinal(int(s['nth']))} business day",
             "days": lambda: "days " + " & ".join(str(x) for x in s["days"]),
         }[mode]()
+        starts = " · starts 1st" if s.get("start") == "month_first" else ""
         if mode == "days" and s["days"] == [1, 15] and n == 1:
-            return "Semi-monthly · 1st & 15th"
-        return f"{base} · {detail}"
+            return "Semi-monthly · 1st & 15th" + starts
+        return f"{base} · {detail}{starts}"
     if f == "yearly":
         return every("Yearly", "years") + f" · {calendar.month_abbr[int(s['month'])]} {s['day']}"
     return f"{s['days']} days after completion"

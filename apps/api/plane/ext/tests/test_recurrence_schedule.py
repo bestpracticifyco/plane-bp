@@ -6,7 +6,15 @@ import datetime as dt
 
 import pytest
 
-from plane.ext.recurrence import ScheduleError, first_on_or_after, is_business_day, next_after, summary, validate
+from plane.ext.recurrence import (
+    ScheduleError,
+    first_on_or_after,
+    is_business_day,
+    next_after,
+    next_period,
+    summary,
+    validate,
+)
 
 D = dt.date
 
@@ -22,6 +30,16 @@ def seq(schedule, start, count, anchor=None):
 def test_daily_and_skip_weekends():
     assert seq({"freq": "daily"}, D(2026, 11, 20), 3) == [D(2026, 11, 21), D(2026, 11, 22), D(2026, 11, 23)]
     assert seq({"freq": "daily", "skip_weekends": True}, D(2026, 11, 20), 2) == [D(2026, 11, 23), D(2026, 11, 24)]
+
+
+def test_monthly_next_period_is_next_month():
+    bd5 = {"freq": "monthly", "mode": "business_day", "nth": 5}
+    assert next_period(bd5, D(2026, 12, 5)) == D(2027, 1, 8)  # off-schedule Sat 5 Dec: not Mon 7 Dec
+    assert next_period(bd5, D(2026, 12, 7)) == D(2027, 1, 8)
+    assert next_period({"freq": "monthly", "mode": "last_day"}, D(2026, 11, 30)) == D(2026, 12, 31)
+    semi = {"freq": "monthly", "mode": "days", "days": [1, 15]}
+    assert next_period(semi, D(2026, 12, 1)) == D(2026, 12, 15)
+    assert next_period({"freq": "daily"}, D(2026, 12, 5)) == D(2026, 12, 6)
 
 
 def test_daily_on_chosen_days():
@@ -113,4 +131,5 @@ def test_summaries():
     assert summary({"freq": "daily", "skip_weekends": True}) == "Daily · Mon–Fri"
     assert summary({"freq": "daily", "weekdays": [0, 1, 2, 3, 6]}) == "Daily · Sun, Mon, Tue, Wed, Thu"
     assert summary({"freq": "daily", "weekdays": list(range(7))}) == "Daily"
+    assert summary({"freq": "monthly", "mode": "last_day", "start": "month_first"}) == "Monthly · last day · starts 1st"
     assert summary({"freq": "days_after", "days": 3}) == "3 days after completion"

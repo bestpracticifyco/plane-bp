@@ -39,11 +39,13 @@ type Form = {
   dailyDays: number[];
   weekdays: number[];
   monthMode: MonthMode;
+  startFirst: boolean;
   businessDay: number;
   daysAfter: number;
   trigger: TExtRecurrenceTrigger;
   triggerStateId: string;
   runTime: string;
+  runOn: "due" | "start";
   createNew: boolean;
   newStateId: string;
   copyFields: TExtCopyField[];
@@ -77,11 +79,13 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     dailyDays: ALL_DAYS,
     weekdays: [due.weekday],
     monthMode: "same_day",
+    startFirst: false,
     businessDay: 5,
     daysAfter: 7,
     trigger: "completed",
     triggerStateId: "",
     runTime: "06:00",
+    runOn: "due",
     createNew: true,
     newStateId: "",
     copyFields: EXT_COPY_FIELDS.map(([k]) => k),
@@ -97,6 +101,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     trigger: rule.trigger,
     triggerStateId: rule.trigger_state_id ?? "",
     runTime: rule.run_time,
+    runOn: rule.run_on ?? "due",
     createNew: rule.create_new,
     newStateId: rule.new_state_id ?? "",
     copyFields: rule.copy_fields,
@@ -105,6 +110,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     endDate: rule.end_date ?? "",
     resync: rule.resync_on_due_change,
     interval: s.freq === "days_after" ? 1 : (s.interval ?? 1),
+    startFirst: s.freq === "monthly" && s.start === "month_first",
   };
   if (s.freq === "days_after") return { ...f, preset: "days_after", daysAfter: s.days };
   if (s.freq === "daily")
@@ -135,6 +141,11 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
 }
 
 function toSchedule(f: Form, due: ReturnType<typeof dueFacts>): TExtSchedule {
+  const s = baseSchedule(f, due);
+  return s.freq === "monthly" && f.startFirst ? { ...s, start: "month_first" } : s;
+}
+
+function baseSchedule(f: Form, due: ReturnType<typeof dueFacts>): TExtSchedule {
   const monthly = (interval: number): TExtSchedule => {
     if (f.monthMode === "nth_weekday")
       return { freq: "monthly", interval, mode: "nth_weekday", nth: Math.min(due.nth, 5), weekday: due.weekday };
@@ -264,6 +275,7 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
         trigger: form.preset === "days_after" && form.trigger === "schedule" ? "completed" : form.trigger,
         trigger_state_id: form.trigger === "state" ? form.triggerStateId || null : null,
         run_time: form.runTime,
+        run_on: form.runOn,
         create_new: form.createNew,
         new_state_id: form.newStateId || null,
         copy_fields: form.copyFields,
@@ -380,6 +392,20 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
             </>
           )}
 
+          {(isMonthly || form.preset === "semimonthly") && (
+            <>
+              <span />
+              <label className="flex items-center gap-2 text-secondary">
+                <input
+                  type="checkbox"
+                  checked={form.startFirst}
+                  onChange={(e) => set("startFirst", e.target.checked)}
+                />
+                Start date on the 1st of the month
+              </label>
+            </>
+          )}
+
           {form.preset === "days_after" && (
             <>
               <span className="text-secondary">Days after done</span>
@@ -420,12 +446,23 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
               </select>
             )}
             {form.trigger === "schedule" && (
-              <input
-                type="time"
-                className={field}
-                value={form.runTime}
-                onChange={(e) => set("runTime", e.target.value)}
-              />
+              <>
+                <select
+                  className={field}
+                  value={form.runOn}
+                  onChange={(e) => set("runOn", e.target.value as Form["runOn"])}
+                >
+                  <option value="due">on the due date</option>
+                  <option value="start">on the next start date</option>
+                </select>
+                <span className="text-secondary">at</span>
+                <input
+                  type="time"
+                  className={field}
+                  value={form.runTime}
+                  onChange={(e) => set("runTime", e.target.value)}
+                />
+              </>
             )}
           </div>
 

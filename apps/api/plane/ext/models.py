@@ -264,6 +264,8 @@ class ExtRecurrenceRule(BaseModel):
     occurrences = models.PositiveIntegerField(default=0)
     resync_on_due_change = models.BooleanField(default=False)
     run_time = models.TimeField(default=dt.time(6, 0))  # workspace timezone
+    # schedule trigger: "due" = on the current item's due date; "start" = on the next item's start date
+    run_on = models.CharField(max_length=8, choices=[("due", "due"), ("start", "start")], default="due")
     next_run_at = models.DateTimeField(null=True, blank=True)  # schedule trigger only
     paused = models.BooleanField(default=False)
     ended_at = models.DateTimeField(null=True, blank=True)
