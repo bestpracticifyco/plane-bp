@@ -24,6 +24,16 @@ def test_daily_and_skip_weekends():
     assert seq({"freq": "daily", "skip_weekends": True}, D(2026, 11, 20), 2) == [D(2026, 11, 23), D(2026, 11, 24)]
 
 
+def test_daily_on_chosen_days():
+    # Friday/Saturday weekend: Fri 20 Nov 2026 -> Sun 22, Mon 23
+    sun_thu = {"freq": "daily", "weekdays": [6, 0, 1, 2, 3]}
+    assert seq(sun_thu, D(2026, 11, 19), 2) == [D(2026, 11, 22), D(2026, 11, 23)]
+    assert validate({"freq": "daily", "weekdays": [3, 3, 0]})["weekdays"] == [0, 3]
+    for bad in ([], [7]):
+        with pytest.raises(ScheduleError):
+            validate({"freq": "daily", "weekdays": bad})
+
+
 def test_weekly_multiple_days_and_biweekly():
     assert seq({"freq": "weekly", "weekdays": [0, 3]}, D(2026, 11, 16), 3) == [
         D(2026, 11, 19),
@@ -100,5 +110,7 @@ def test_summaries():
     assert summary({"freq": "weekly", "interval": 2, "weekdays": [4]}) == "Bi-weekly · Fri"
     assert summary({"freq": "monthly", "mode": "days", "days": [1, 15]}) == "Semi-monthly · 1st & 15th"
     assert summary({"freq": "monthly", "interval": 3, "mode": "last_day"}) == "Quarterly · last day"
-    assert summary({"freq": "daily", "skip_weekends": True}) == "Daily · weekdays"
+    assert summary({"freq": "daily", "skip_weekends": True}) == "Daily · Mon–Fri"
+    assert summary({"freq": "daily", "weekdays": [0, 1, 2, 3, 6]}) == "Daily · Sun, Mon, Tue, Wed, Thu"
+    assert summary({"freq": "daily", "weekdays": list(range(7))}) == "Daily"
     assert summary({"freq": "days_after", "days": 3}) == "3 days after completion"

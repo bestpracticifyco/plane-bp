@@ -60,7 +60,7 @@ export type TExtAccessCell = { member_id: string; project_id: string; role: TExt
 
 /** Recurring work items (plane_ext.recurrence). Weekdays: 0 = Monday .. 6 = Sunday. */
 export type TExtSchedule =
-  | { freq: "daily"; interval?: number; skip_weekends?: boolean }
+  | { freq: "daily"; interval?: number; weekdays?: number[]; skip_weekends?: boolean }
   | { freq: "weekly"; interval?: number; weekdays: number[] }
   | {
       freq: "monthly";
