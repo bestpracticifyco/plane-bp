@@ -4,7 +4,8 @@
 
 A schedule is a small JSON object (stored on ExtRecurrenceRule.schedule):
 
-    {"freq": "daily",   "interval": 1, "skip_weekends": true}
+    {"freq": "daily",   "interval": 1, "weekdays": [6, 0, 1, 2, 3]}  # runs only on these days (Sun-Thu)
+    {"freq": "daily",   "interval": 1, "skip_weekends": true}         # older form: same as weekdays [0..4]
     {"freq": "weekly",  "interval": 2, "weekdays": [0, 3]}             # Mon=0 .. Sun=6
     {"freq": "monthly", "interval": 1, "mode": "same_day", "day": 31}  # clamped to month length
     {"freq": "monthly", "mode": "nth_weekday", "nth": 4, "weekday": 6} # 4th Sunday; nth -1 = last
@@ -107,6 +108,10 @@ def validate(schedule):
         s["days"] = int(s.get("days") or 0)
         if not 1 <= s["days"] <= 365:
             raise ScheduleError("days must be between 1 and 365")
+    if f == "daily" and s.get("weekdays") is not None:
+        s["weekdays"] = sorted({int(w) for w in s["weekdays"]})
+        if not s["weekdays"] or any(w not in range(7) for w in s["weekdays"]):
+            raise ScheduleError("daily weekdays must be one or more of 0=Mon .. 6=Sun")
     if f == "weekly":
         s["weekdays"] = sorted({int(w) for w in s.get("weekdays") or []})
         if not s["weekdays"] or any(w not in range(7) for w in s["weekdays"]):
@@ -140,10 +145,16 @@ def _month_index(d):
     return d.year * 12 + d.month
 
 
+def _daily_days(s):
+    if s.get("weekdays") is not None:
+        return s["weekdays"]
+    return [0, 1, 2, 3, 4] if s.get("skip_weekends") else list(range(7))
+
+
 def matches(s, d, anchor):
     f, n = s["freq"], s.get("interval", 1)
     if f == "daily":
-        return (d - anchor).days % n == 0 and not (s.get("skip_weekends") and d.weekday() >= 5)
+        return (d - anchor).days % n == 0 and d.weekday() in _daily_days(s)
     if f == "weekly":
         week = (d - dt.timedelta(days=d.weekday()) - (anchor - dt.timedelta(days=anchor.weekday()))).days // 7
         return d.weekday() in s["weekdays"] and week % n == 0
@@ -202,7 +213,14 @@ def summary(schedule):
     every = lambda unit, plural: unit if n == 1 else f"Every {n} {plural}"  # noqa: E731
     if f == "daily":
         base = every("Daily", "days")
-        return base + (" · weekdays" if s.get("skip_weekends") else "")
+        days = _daily_days(s)
+        if len(days) == 7:
+            return base
+        if days == [0, 1, 2, 3, 4]:
+            return base + " · Mon–Fri"
+        # list from the first day after a gap, so Sun-Thu reads "Sun, Mon, Tue, Wed, Thu"
+        start = next(i for i, w in enumerate(days) if (w - 1) % 7 not in days)
+        return base + " · " + ", ".join(WEEKDAY_NAMES[w] for w in days[start:] + days[:start])
     if f == "weekly":
         base = "Bi-weekly" if n == 2 else every("Weekly", "weeks")
         return f"{base} · " + ", ".join(WEEKDAY_NAMES[w] for w in s["weekdays"])

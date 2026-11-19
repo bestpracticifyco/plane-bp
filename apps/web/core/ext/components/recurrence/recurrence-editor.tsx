@@ -3,10 +3,12 @@
  * Copyright (c) 2026 Best Practicify LLC. This file is part of a fork of Plane (https://github.com/makeplane/plane).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { Dialog, Transition } from "@headlessui/react";
 import { observer } from "mobx-react";
 import { Button } from "@plane/propel/button";
-import { EModalPosition, EModalWidth, ModalCore } from "@plane/ui";
+import { EModalPosition, EModalWidth } from "@plane/ui";
 import { useProjectState } from "@/hooks/store/use-project-state";
 import { extStore } from "../../store/ext.store";
 import { EXT_COPY_FIELDS } from "../../types";
@@ -14,6 +16,7 @@ import type { TExtCopyField, TExtRecurrenceRule, TExtRecurrenceTrigger, TExtSche
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const ORDINAL = ["", "First", "Second", "Third", "Fourth", "Fifth"];
+const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 type Preset =
@@ -33,7 +36,7 @@ type Form = {
   preset: Preset;
   interval: number;
   unit: Unit;
-  skipWeekends: boolean;
+  dailyDays: number[];
   weekdays: number[];
   monthMode: MonthMode;
   businessDay: number;
@@ -71,7 +74,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     preset: "monthly",
     interval: 1,
     unit: "monthly",
-    skipWeekends: false,
+    dailyDays: ALL_DAYS,
     weekdays: [due.weekday],
     monthMode: "same_day",
     businessDay: 5,
@@ -105,7 +108,12 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
   };
   if (s.freq === "days_after") return { ...f, preset: "days_after", daysAfter: s.days };
   if (s.freq === "daily")
-    return { ...f, preset: f.interval === 1 ? "daily" : "custom", unit: "daily", skipWeekends: !!s.skip_weekends };
+    return {
+      ...f,
+      preset: f.interval === 1 ? "daily" : "custom",
+      unit: "daily",
+      dailyDays: s.weekdays ?? (s.skip_weekends ? [0, 1, 2, 3, 4] : ALL_DAYS),
+    };
   if (s.freq === "weekly")
     return {
       ...f,
@@ -138,7 +146,7 @@ function toSchedule(f: Form, due: ReturnType<typeof dueFacts>): TExtSchedule {
   };
   switch (f.preset) {
     case "daily":
-      return { freq: "daily", interval: 1, skip_weekends: f.skipWeekends };
+      return { freq: "daily", interval: 1, weekdays: f.dailyDays };
     case "weekly":
       return { freq: "weekly", interval: 1, weekdays: f.weekdays };
     case "biweekly":
@@ -154,14 +162,65 @@ function toSchedule(f: Form, due: ReturnType<typeof dueFacts>): TExtSchedule {
     case "days_after":
       return { freq: "days_after", days: f.daysAfter };
     case "custom":
-      if (f.unit === "daily") return { freq: "daily", interval: f.interval, skip_weekends: f.skipWeekends };
+      if (f.unit === "daily") return { freq: "daily", interval: f.interval, weekdays: f.dailyDays };
       if (f.unit === "weekly") return { freq: "weekly", interval: f.interval, weekdays: f.weekdays };
       if (f.unit === "yearly") return { freq: "yearly", interval: f.interval, month: due.month, day: due.day };
       return monthly(f.interval);
   }
 }
 
+/** Toggle buttons for Monday..Sunday; at least one day stays selected. */
+function DayPicker({ value, onChange }: { value: number[]; onChange: (days: number[]) => void }) {
+  const toggle = (i: number) => {
+    const next = value.includes(i) ? value.filter((d) => d !== i) : [...value, i];
+    if (next.length) onChange(ALL_DAYS.filter((d) => next.includes(d)));
+  };
+  return (
+    <div className="flex flex-wrap gap-1">
+      {DAY_NAMES.map((n, i) => (
+        <button
+          key={n}
+          type="button"
+          aria-pressed={value.includes(i)}
+          className={`h-7 rounded-sm border px-2 text-12 ${
+            value.includes(i) ? "border-accent-strong bg-accent-primary text-on-color" : "border-subtle text-secondary"
+          }`}
+          onClick={() => toggle(i)}
+        >
+          {n.slice(0, 3)}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 const field = "h-8 rounded-md border border-subtle bg-surface-1 px-2 text-13 text-primary";
+
+/**
+ * Plane's ModalCore, plus `data-prevent-outside-click` on the dialog root. The side peek closes on any
+ * mousedown outside itself unless the target sits inside such an element, and this dialog is portalled
+ * out of the peek. Without the marker, the first click in the dialog closed the peek, which unmounted
+ * the dialog under the open <select> (Windows: everything vanished; macOS: the native option list was
+ * left floating at the top-left of the screen).
+ */
+function ExtModal({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <Transition.Root show as={Fragment}>
+      <Dialog as="div" className="relative z-30" onClose={onClose} data-prevent-outside-click>
+        <div className="fixed inset-0 bg-backdrop transition-opacity" />
+        <div className="fixed inset-0 z-30 overflow-y-auto">
+          <div className={EModalPosition.TOP}>
+            <Dialog.Panel
+              className={`relative w-full transform rounded-lg bg-surface-1 text-left shadow-raised-200 ${EModalWidth.XL}`}
+            >
+              {children}
+            </Dialog.Panel>
+          </div>
+        </div>
+      </Dialog>
+    </Transition.Root>
+  );
+}
 
 type Props = {
   workspaceSlug: string;
@@ -231,7 +290,7 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
 
   const dayName = DAY_NAMES[due.weekday];
   return (
-    <ModalCore isOpen handleClose={onClose} position={EModalPosition.TOP} width={EModalWidth.XL}>
+    <ExtModal onClose={onClose}>
       <div className="flex flex-col gap-4 p-5 text-13">
         <h3 className="text-16 font-medium text-primary">Recurring</h3>
 
@@ -275,46 +334,15 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
 
           {isDaily && (
             <>
-              <span />
-              <label className="flex items-center gap-2 text-secondary">
-                <input
-                  type="checkbox"
-                  checked={form.skipWeekends}
-                  onChange={(e) => set("skipWeekends", e.target.checked)}
-                />
-                Skip weekends
-              </label>
+              <span className="text-secondary">On these days</span>
+              <DayPicker value={form.dailyDays} onChange={(v) => set("dailyDays", v)} />
             </>
           )}
 
           {isWeekly && (
             <>
               <span className="text-secondary">On</span>
-              <div className="flex flex-wrap gap-1">
-                {DAY_NAMES.map((n, i) => (
-                  <button
-                    key={n}
-                    type="button"
-                    className={`h-7 rounded-sm border px-2 text-12 ${
-                      form.weekdays.includes(i)
-                        ? "border-accent-strong bg-accent-primary text-on-color"
-                        : "border-subtle text-secondary"
-                    }`}
-                    onClick={() =>
-                      set(
-                        "weekdays",
-                        form.weekdays.includes(i)
-                          ? form.weekdays.filter((w) => w !== i).length
-                            ? form.weekdays.filter((w) => w !== i)
-                            : form.weekdays
-                          : DAY_NAMES.map((_, d) => d).filter((d) => d === i || form.weekdays.includes(d))
-                      )
-                    }
-                  >
-                    {n.slice(0, 3)}
-                  </button>
-                ))}
-              </div>
+              <DayPicker value={form.weekdays} onChange={(v) => set("weekdays", v)} />
             </>
           )}
 
@@ -500,6 +528,6 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
           </div>
         </div>
       </div>
-    </ModalCore>
+    </ExtModal>
   );
 });
