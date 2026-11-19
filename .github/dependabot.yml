@@ -1,5 +1,13 @@
 # Base-image currency (FR-EXT-114). npm/pip follow upstream releases, not Dependabot.
+# Runtimes stay on the line upstream Plane builds and tests with (Node 22, Python 3.12): no Node
+# majors, and only patch releases for Python. Dockerfiles are upstream files, so a docker PR fails
+# the discipline gate on purpose; take an update by adding or retargeting a patches/ entry.
 version: 2
 updates:
   - { package-ecosystem: github-actions, directory: /, schedule: { interval: weekly } }
-  - { package-ecosystem: docker, directories: [/apps/web, /apps/admin, /apps/space, /apps/live, /apps/api, /apps/proxy], schedule: { interval: weekly } }
+  - package-ecosystem: docker
+    directories: [/apps/web, /apps/admin, /apps/space, /apps/live, /apps/api, /apps/proxy]
+    schedule: { interval: weekly }
+    ignore:
+      - { dependency-name: node, update-types: [version-update:semver-major] }
+      - { dependency-name: python, update-types: [version-update:semver-major, version-update:semver-minor] }
