@@ -182,6 +182,34 @@ def test_schedule_trigger_runs_once_at_run_time(people, item):
     assert rule.current_issue.target_date == D(2026, 11, 23)
 
 
+def test_schedule_on_start_date_keeps_span_and_clears_checklist(people, item, todo):
+    """Workspace Northwest close tasks: due last day of month, next one appears on its start date."""
+    item.start_date, item.target_date = D(2026, 11, 1), D(2026, 11, 30)
+    item.description_html = '<ul data-type="taskList"><li data-checked="true" data-type="taskItem"><p>Bank statement</p></li></ul>'
+    item.save()
+    rule = recurring.upsert(
+        item,
+        people["member"],
+        {
+            "schedule": {"freq": "monthly", "mode": "last_day"},
+            "trigger": "schedule",
+            "run_on": "start",
+            "new_state_id": str(todo.id),
+        },
+    )
+    assert rule.next_run_at.date() == D(2026, 12, 2)  # Dec 31 minus the 29-day span
+    with _today(D(2026, 12, 2)):
+        assert recurring.run_due(rule.next_run_at - dt.timedelta(minutes=1)) == 0
+        assert recurring.run_due(rule.next_run_at + dt.timedelta(minutes=1)) == 1
+    rule.refresh_from_db()
+    new = rule.current_issue
+    assert (new.start_date, new.target_date, new.state_id) == (D(2026, 12, 2), D(2026, 12, 31), todo.id)
+    assert 'data-checked="false"' in new.description_html and 'data-checked="true"' not in new.description_html
+    assert rule.next_run_at.date() == D(2027, 1, 2)
+    with pytest.raises(Exception):
+        recurring.upsert(item, people["member"], {"run_on": "later"})
+
+
 def test_schedule_after_downtime_creates_no_past_items(people, item):
     rule = recurring.upsert(item, people["member"], {"schedule": {"freq": "daily"}, "trigger": "schedule"})
     with _today(D(2026, 12, 10)):

@@ -5,8 +5,9 @@
 Triggers
   completed  the current item moves into a Completed-group state -> next instance now
   state      the current item moves into `trigger_state`        -> next instance now
-  schedule   at `run_time` (workspace timezone) on the current item's due date -> next instance,
-             whatever the current item's state; completing it earlier spawns immediately.
+  schedule   at `run_time` (workspace timezone) on the current item's due date, or with run_on="start"
+             on the next instance's start date (same start-to-due span) -> next instance, whatever the
+             current item's state; completing it earlier spawns immediately.
 Each (rule, new due date) spawns at most once (ExtRecurrenceSpawn), so signals, the 5-minute tick
 and retries can all call spawn() safely. New items go through Plane's IssueCreateSerializer and
 fire the same activity/webhook tasks as the issue-create view, so the Governor sees them.
@@ -15,6 +16,7 @@ fire the same activity/webhook tasks as the issue-create view, so the Governor s
 import datetime as dt
 import json
 import logging
+import re
 import zoneinfo
 
 from crum import impersonate
@@ -57,6 +59,7 @@ EDITABLE = (
     "end_date",
     "resync_on_due_change",
     "run_time",
+    "run_on",
 )
 
 
@@ -85,6 +88,7 @@ def rule_json(r):
         "occurrences": r.occurrences,
         "resync_on_due_change": r.resync_on_due_change,
         "run_time": r.run_time.strftime("%H:%M"),
+        "run_on": r.run_on,
         "next_run_at": r.next_run_at.isoformat() if r.next_run_at else None,
         "next_due": _safe_next_due(r),
         "paused": r.paused,
@@ -135,6 +139,8 @@ def _clean(issue, data, rule=None):
             out["run_time"] = dt.time.fromisoformat(str(out["run_time"]))
         except ValueError:
             raise ValidationError({"run_time": ["HH:MM expected"]})
+    if out.get("run_on", "due") not in ("due", "start"):
+        raise ValidationError({"run_on": ["must be due or start"]})
     if out.get("end_date"):
         try:
             out["end_date"] = dt.date.fromisoformat(str(out["end_date"]))
@@ -169,7 +175,7 @@ def upsert(issue, user, data):
             setattr(rule, key, value)
         if "schedule" in fields:
             rule.anchor = issue.target_date
-        rule.next_run_at = _run_at(rule, issue.target_date) if rule.trigger == RecurrenceTrigger.SCHEDULE else None
+        rule.next_run_at = _next_run_at(rule, issue)
         with impersonate(user):
             rule.save()
     return rule
@@ -199,7 +205,7 @@ def skip_next(rule):
     issue._ext_spawning = True
     issue.save(update_fields=["start_date", "target_date", "updated_at"])
     if rule.trigger == RecurrenceTrigger.SCHEDULE:
-        rule.next_run_at = _run_at(rule, new_due)
+        rule.next_run_at = _next_run_at(rule, issue)
         rule.save(update_fields=["next_run_at", "updated_at"])
 
 
@@ -213,8 +219,7 @@ def on_due_date_changed(issue):
         rule.schedule = {**rule.schedule, "day": issue.target_date.day}
     if rule.schedule.get("freq") == "weekly" and len(rule.schedule.get("weekdays", [])) == 1:
         rule.schedule = {**rule.schedule, "weekdays": [issue.target_date.weekday()]}
-    if rule.trigger == RecurrenceTrigger.SCHEDULE:
-        rule.next_run_at = _run_at(rule, issue.target_date)
+    rule.next_run_at = _next_run_at(rule, issue)
     rule.save(update_fields=["anchor", "schedule", "next_run_at", "updated_at"])
 
 
@@ -230,6 +235,16 @@ def _tz(rule):
 
 def _run_at(rule, due):
     return dt.datetime.combine(due, rule.run_time, tzinfo=_tz(rule))
+
+
+def _next_run_at(rule, issue):
+    """When the schedule trigger next fires for the live item `issue` (None for other triggers)."""
+    if rule.trigger != RecurrenceTrigger.SCHEDULE or issue.target_date is None:
+        return None
+    if rule.run_on != "start":
+        return _run_at(rule, issue.target_date)
+    span = (issue.target_date - issue.start_date) if issue.start_date else dt.timedelta(0)
+    return _run_at(rule, recurrence.next_after(rule.schedule, issue.target_date, rule.anchor) - span)
 
 
 def _move_dates(issue, new_due, old_due=None):
@@ -289,7 +304,7 @@ def spawn(rule_id, reason, completed_on=None):
         rule.current_issue = new
         rule.occurrences += 1
         rule.last_spawned_at = timezone.now()
-        rule.next_run_at = _run_at(rule, new_due) if rule.trigger == RecurrenceTrigger.SCHEDULE else None
+        rule.next_run_at = _next_run_at(rule, new)
         rule.save(update_fields=["current_issue", "occurrences", "last_spawned_at", "next_run_at", "updated_at"])
         if rule.create_new:
             transaction.on_commit(lambda: _announce(rule, new))
@@ -312,6 +327,11 @@ def _default_state_id(project_id):
     )
 
 
+def _untick(html):
+    """A new period starts with its description checklist cleared."""
+    return re.sub(r'(data-checked=)"true"', r'\1"false"', html or "<p></p>")
+
+
 def _copy(rule, src, new_due, parent_id=None, old_due=None):
     """Copy `src` to a new item due `new_due`, with the fields the rule selects."""
     from plane.app.serializers import IssueCreateSerializer
@@ -324,7 +344,7 @@ def _copy(rule, src, new_due, parent_id=None, old_due=None):
         "state_id": str(rule.new_state_id or _default_state_id(src.project_id)),
         "target_date": new_due.isoformat(),
         "start_date": start.isoformat() if start else None,
-        "description_html": src.description_html if "description" in want else "<p></p>",
+        "description_html": _untick(src.description_html) if "description" in want else "<p></p>",
         "priority": src.priority if "priority" in want else "none",
     }
     if "estimate" in want and src.estimate_point_id:

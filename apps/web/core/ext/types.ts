@@ -115,6 +115,8 @@ export type TExtRecurrenceRule = {
   occurrences: number;
   resync_on_due_change: boolean;
   run_time: string;
+  /** schedule trigger: create on the current item's due date, or on the next item's start date */
+  run_on: "due" | "start";
   next_run_at: string | null;
   next_due: string | null;
   paused: boolean;
@@ -134,6 +136,7 @@ export type TExtRecurrenceInput = Partial<
     | "end_date"
     | "resync_on_due_change"
     | "run_time"
+    | "run_on"
   >
 >;
 

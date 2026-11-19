@@ -44,6 +44,7 @@ type Form = {
   trigger: TExtRecurrenceTrigger;
   triggerStateId: string;
   runTime: string;
+  runOn: "due" | "start";
   createNew: boolean;
   newStateId: string;
   copyFields: TExtCopyField[];
@@ -82,6 +83,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     trigger: "completed",
     triggerStateId: "",
     runTime: "06:00",
+    runOn: "due",
     createNew: true,
     newStateId: "",
     copyFields: EXT_COPY_FIELDS.map(([k]) => k),
@@ -97,6 +99,7 @@ function initialForm(rule: TExtRecurrenceRule | null, due: ReturnType<typeof due
     trigger: rule.trigger,
     triggerStateId: rule.trigger_state_id ?? "",
     runTime: rule.run_time,
+    runOn: rule.run_on ?? "due",
     createNew: rule.create_new,
     newStateId: rule.new_state_id ?? "",
     copyFields: rule.copy_fields,
@@ -264,6 +267,7 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
         trigger: form.preset === "days_after" && form.trigger === "schedule" ? "completed" : form.trigger,
         trigger_state_id: form.trigger === "state" ? form.triggerStateId || null : null,
         run_time: form.runTime,
+        run_on: form.runOn,
         create_new: form.createNew,
         new_state_id: form.newStateId || null,
         copy_fields: form.copyFields,
@@ -420,12 +424,23 @@ export const RecurrenceEditor = observer(function RecurrenceEditor(props: Props)
               </select>
             )}
             {form.trigger === "schedule" && (
-              <input
-                type="time"
-                className={field}
-                value={form.runTime}
-                onChange={(e) => set("runTime", e.target.value)}
-              />
+              <>
+                <select
+                  className={field}
+                  value={form.runOn}
+                  onChange={(e) => set("runOn", e.target.value as Form["runOn"])}
+                >
+                  <option value="due">on the due date</option>
+                  <option value="start">on the next start date</option>
+                </select>
+                <span className="text-secondary">at</span>
+                <input
+                  type="time"
+                  className={field}
+                  value={form.runTime}
+                  onChange={(e) => set("runTime", e.target.value)}
+                />
+              </>
             )}
           </div>
 
