@@ -9,8 +9,10 @@ estimates. Workspace Admins keep them; everyone else gets 403. The membership-aw
 endpoints are left alone. Registered in plane.settings.bp, so no upstream file changes.
 """
 
+import json
 import re
 
+from django.core.exceptions import ValidationError
 from django.http import JsonResponse
 
 from . import services
@@ -38,3 +40,54 @@ class AccessHardeningMiddleware:
             ):
                 return JsonResponse({"error": "Workspace analytics are limited to workspace admins."}, status=403)
         return self.get_response(request)
+
+
+_CREATE = re.compile(
+    r"^/api/(?:v1/)?workspaces/(?P<slug>[^/]+)/projects/(?P<project_id>[0-9a-f-]{36})/(?:issues|work-items)/$"
+)
+MODULE_REQUIRED = "Add this work item to a module (its Function), or create it in a backlog state such as Open."
+
+
+class RequireModuleMiddleware:
+    """`ext.require_module` on create (FR-EXT-012a).
+
+    The pre_save guard in signals.py covers items moving out of Backlog/Triage, but an item can also be
+    created straight into a work state. That cannot be checked at save time: the web create form saves
+    the item first and attaches its modules in a second request. The create request itself carries the
+    chosen `module_ids`, so it is checked here: a create into a non-backlog state, in a project with
+    active modules, with no module chosen, gets 400 and the form shows the message.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        m = _CREATE.match(request.path) if request.method == "POST" else None
+        if m is not None and services.is_enabled_for_slug(m.group("slug"), "ext.require_module"):
+            error = self._check(m.group("slug"), m.group("project_id"), request.body)
+            if error:
+                return JsonResponse({"error": error, "state_id": [error]}, status=400)
+        return self.get_response(request)
+
+    @staticmethod
+    def _check(slug, project_id, body):
+        from plane.db.models import Module, State
+
+        try:
+            data = json.loads(body or b"{}")
+        except ValueError:
+            return None
+        if not isinstance(data, dict) or data.get("module_ids"):
+            return None
+        states = State.objects.filter(project_id=project_id, project__workspace__slug=slug)
+        state_id = data.get("state_id") or data.get("state")
+        try:
+            state = states.filter(id=state_id) if state_id else states.filter(default=True)
+            group = state.values_list("group", flat=True).first()
+        except (ValueError, ValidationError):
+            return None
+        if group is None or group in ("backlog", "triage"):
+            return None
+        if not Module.objects.filter(project_id=project_id, archived_at__isnull=True).exists():
+            return None
+        return MODULE_REQUIRED

@@ -172,6 +172,45 @@ def test_module_guard_skips_projects_without_modules(people, issue, states, ws):
     _start(issue, states, people["member"])  # AF Training style: no modules, never blocked
 
 
+@pytest.fixture
+def no_celery(monkeypatch):
+    """The create view queues activity/webhook tasks; the test stack has no broker."""
+    from celery.app.task import Task
+
+    monkeypatch.setattr(Task, "delay", lambda self, *a, **k: None)
+
+
+def _create(user, project, **data):
+    from django.test import Client
+
+    c = Client()
+    c.force_login(user)
+    url = f"/api/workspaces/{project.workspace.slug}/projects/{project.id}/issues/"
+    return c.post(url, {"name": "Payroll run", **data}, content_type="application/json")
+
+
+def test_module_required_on_create_into_a_work_state(people, project, states, ws, no_celery):
+    """IMAGINE-2: created straight into To do with no module slipped past the move-out-of-Backlog guard."""
+    State = type(states["backlog"])
+    State.objects.filter(id=states["backlog"].id).update(default=True)
+    ap = _module(project, "Accounts Payable")
+    member = people["member"]
+
+    assert _create(member, project, state_id=str(states["started"].id)).status_code == 201  # flag off
+    services.set_flags(ws.id, {"ext.require_module": True})
+    r = _create(member, project, state_id=str(states["started"].id))
+    assert r.status_code == 400 and "module" in r.json()["error"]
+    assert _create(member, project, state_id=str(states["started"].id), module_ids=[str(ap.id)]).status_code == 201
+    assert _create(member, project, state_id=str(states["backlog"].id)).status_code == 201
+    assert _create(member, project).status_code == 201  # default state is a backlog state
+    assert _create(member, project, state_id="not-a-uuid").status_code != 500
+
+
+def test_module_required_on_create_skips_projects_without_modules(people, project, states, ws, no_celery):
+    services.set_flags(ws.id, {"ext.require_module": True})
+    assert _create(people["member"], project, state_id=str(states["started"].id)).status_code == 201
+
+
 def test_module_guard_off_by_default(people, project, issue, states):
     _module(project, "Accounts Payable")
     _start(issue, states, people["member"])
