@@ -226,6 +226,28 @@ def test_monthly_start_on_the_first(people, item, todo):
     assert rule.next_run_at.date() == D(2027, 1, 1)
 
 
+def test_next_item_goes_to_the_cycle_after_the_current_one(people, item, project):
+    """November close is due 5 Dec; the December close (due in January) belongs to cycle 2026-12."""
+    from plane.db.models import Cycle, CycleIssue
+
+    def month(y, m):
+        start = timezone.make_aware(dt.datetime(y, m, 1, 8))
+        end = timezone.make_aware(dt.datetime(y + m // 12, m % 12 + 1, 1, 7))
+        return Cycle.objects.create(
+            name=f"{y}-{m:02}", project=project, workspace=project.workspace, owned_by=people["admin"],
+            start_date=start, end_date=end,
+        )
+
+    nov, dec, _jan = month(2026, 11), month(2026, 12), month(2027, 1)
+    item.start_date, item.target_date = D(2026, 11, 30), D(2026, 12, 5)
+    item.save()
+    CycleIssue.objects.create(cycle=nov, issue=item, project=project, workspace=project.workspace)
+    rule = recurring.upsert(item, people["member"], {"schedule": {"freq": "monthly", "mode": "business_day", "nth": 5}})
+    new = recurring.spawn(rule.id, "completed")
+    assert new.target_date == D(2027, 1, 8)
+    assert CycleIssue.objects.get(issue=new).cycle_id == dec.id
+
+
 def test_schedule_after_downtime_creates_no_past_items(people, item):
     rule = recurring.upsert(item, people["member"], {"schedule": {"freq": "daily"}, "trigger": "schedule"})
     with _today(D(2026, 12, 10)):

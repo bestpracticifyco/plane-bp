@@ -335,6 +335,16 @@ def _default_state_id(project_id):
     )
 
 
+def _next_cycle(src, new_due):
+    """The cycle after the one `src` is in (a monthly close due on the 5th of the next month stays one
+    period ahead), or, when `src` is in no cycle, the cycle covering the new due date."""
+    cycles = Cycle.objects.filter(project_id=src.project_id, archived_at__isnull=True)
+    current = CycleIssue.objects.filter(issue=src, cycle__archived_at__isnull=True).select_related("cycle").first()
+    if current and current.cycle.start_date:
+        return cycles.filter(start_date__gt=current.cycle.start_date).order_by("start_date").first()
+    return cycles.filter(start_date__date__lte=new_due, end_date__date__gte=new_due).first()
+
+
 def _untick(html):
     """A new period starts with its description checklist cleared."""
     return re.sub(r'(data-checked=)"true"', r'\1"false"', html or "<p></p>")
@@ -386,9 +396,7 @@ def _copy(rule, src, new_due, parent_id=None, old_due=None):
             ignore_conflicts=True,
         )
     if "cycle" in want and top_level:
-        cycle = Cycle.objects.filter(
-            project_id=project_id, start_date__date__lte=new_due, end_date__date__gte=new_due, archived_at__isnull=True
-        ).first()
+        cycle = _next_cycle(src, new_due)
         if cycle:
             CycleIssue.objects.create(cycle=cycle, issue=new, project_id=project_id, workspace_id=workspace_id)
     if "links" in want:
