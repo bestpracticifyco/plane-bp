@@ -36,6 +36,7 @@ FLAG_DEFAULTS = {
     "ext.activity_mirror_comment": False,
     "ext.access_hardening": False,  # private-by-default projects, role cap, analytics/estimates admin-only
     "ext.recurrence": False,  # recurring work items
+    "ext.team_layout": False,  # shared views on new projects; members start from the team layout
 }
 _FLAG_CACHE_SECONDS = 60
 

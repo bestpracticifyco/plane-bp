@@ -15,6 +15,7 @@ ROOT_URLCONF = "plane.ext.urls_root"
 MIDDLEWARE += [  # noqa: F405  (after auth middleware)
     "plane.ext.middleware.AccessHardeningMiddleware",
     "plane.ext.middleware.RequireModuleMiddleware",
+    "plane.ext.middleware.TeamLayoutMiddleware",
 ]
 CELERY_IMPORTS = (*CELERY_IMPORTS, "plane.ext.tasks")  # noqa: F405
 
