@@ -37,6 +37,7 @@ FLAG_DEFAULTS = {
     "ext.access_hardening": False,  # private-by-default projects, role cap, analytics/estimates admin-only
     "ext.recurrence": False,  # recurring work items
     "ext.team_layout": False,  # shared views on new projects; members start from the team layout
+    "ext.intake_events": False,  # webhook event when someone submits to a project's Intake (AI first-pass triage)
 }
 _FLAG_CACHE_SECONDS = 60
 
@@ -74,9 +75,7 @@ def set_flags(workspace_id, updates):
     if unknown:
         raise ValidationError({"flags": [f"unknown flag: {k}" for k in unknown]})
     for key, enabled in updates.items():
-        ExtFeatureFlag.objects.update_or_create(
-            workspace_id=workspace_id, key=key, defaults={"enabled": bool(enabled)}
-        )
+        ExtFeatureFlag.objects.update_or_create(workspace_id=workspace_id, key=key, defaults={"enabled": bool(enabled)})
     cache.delete(_flag_cache_key(workspace_id))
     return get_flags(workspace_id)
 

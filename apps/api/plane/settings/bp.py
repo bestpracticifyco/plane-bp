@@ -16,6 +16,7 @@ MIDDLEWARE += [  # noqa: F405  (after auth middleware)
     "plane.ext.middleware.AccessHardeningMiddleware",
     "plane.ext.middleware.RequireModuleMiddleware",
     "plane.ext.middleware.TeamLayoutMiddleware",
+    "plane.ext.middleware.GuestScopeMiddleware",
 ]
 CELERY_IMPORTS = (*CELERY_IMPORTS, "plane.ext.tasks")  # noqa: F405
 

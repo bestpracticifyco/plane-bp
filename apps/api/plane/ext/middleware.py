@@ -115,3 +115,115 @@ class TeamLayoutMiddleware:
 
                 layout.ensure_member_layout_safely(m.group("project_id"), user)
         return self.get_response(request)
+
+
+_UUID = r"[0-9a-f-]{36}"
+_ITEM_PART = re.compile(
+    rf"^/api/(?:assets/v2/|ext/v1/)?workspaces/(?P<slug>[^/]+)/projects/(?P<project_id>{_UUID})/"
+    rf"(?:issues|work-items)/(?P<issue_id>{_UUID})/[^/]"
+)
+_STATE = re.compile(rf"^/api/workspaces/(?P<slug>[^/]+)/projects/(?P<project_id>{_UUID})/states/{_UUID}/")
+_PROFILE = re.compile(rf"^/api/workspaces/(?P<slug>[^/]+)/user-(?:issues|activity|stats|profile)/(?P<user_id>{_UUID})/")
+_PUBLIC_PROJECT = re.compile(rf"^/api/v1/workspaces/(?P<slug>[^/]+)/projects/(?P<project_id>{_UUID})/")
+_PUBLIC_ITEMS = re.compile(
+    r"^/api/v1/workspaces/(?P<slug>[^/]+)/(?:issues|work-items)/(?:search/|(?P<identifier>[^/]+)-[^/-]+/)"
+)
+GUEST_SCOPE = "Guests can only see the work items they submitted."
+
+
+class GuestScopeMiddleware:
+    """`ext.access_hardening`: a project Guest who may only see their own work items (upstream's
+    `guest_view_all_features` off) cannot reach anyone else's through the side doors upstream leaves open.
+
+    Upstream filters the item lists, the item page and search for such Guests, but not:
+    an item's comments, activity, sub-items, links, relations, attachments, subscribers and ext values
+    (reached by item id); a colleague's profile page (lists every item they touch in shared projects);
+    the public API (`/api/v1/`, personal API keys), which has no Guest filter at all; and state edits
+    (any Guest may rename or recolour a project's states). Those requests get 403. A Guest keeps full
+    use of their own items (comment, attach, react, subscribe). This is what makes a shared Intake
+    project (IT Support, Time Off) private per requester.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if request.path.startswith("/api/v1/"):
+            denied = self._public_api(request)
+        else:
+            denied = self._app(request)
+        if denied:
+            return JsonResponse({"error": GUEST_SCOPE}, status=403)
+        return self.get_response(request)
+
+    @staticmethod
+    def _restricted(user, slug):
+        """{project_id: identifier} of the projects in `slug` where `user` is a Guest limited to own items."""
+        from plane.db.models import ProjectMember
+
+        if user is None or not user.is_authenticated or not services.is_enabled_for_slug(slug, "ext.access_hardening"):
+            return {}
+        rows = ProjectMember.objects.filter(
+            member=user,
+            workspace__slug=slug,
+            is_active=True,
+            role=5,
+            project__guest_view_all_features=False,
+            project__archived_at__isnull=True,
+        ).values_list("project_id", "project__identifier")
+        return {str(pid): ident for pid, ident in rows}
+
+    def _app(self, request):
+        user = getattr(request, "user", None)
+        m = _ITEM_PART.match(request.path)
+        if m is not None:
+            if m.group("project_id") not in self._restricted(user, m.group("slug")):
+                return False
+            from plane.db.models import Issue
+
+            return not Issue.objects.filter(
+                id=m.group("issue_id"), project_id=m.group("project_id"), created_by_id=user.id
+            ).exists()
+        m = _STATE.match(request.path) if request.method not in ("GET", "HEAD", "OPTIONS") else None
+        if m is not None:
+            return m.group("project_id") in self._restricted(user, m.group("slug"))
+        m = _PROFILE.match(request.path)
+        if m is not None and user is not None and str(getattr(user, "id", "")) != m.group("user_id"):
+            return bool(self._restricted(user, m.group("slug")))
+        return False
+
+    def _public_api(self, request):
+        m = _PUBLIC_PROJECT.match(request.path) or _PUBLIC_ITEMS.match(request.path)
+        if m is None:
+            return False
+        user = self._api_key_user(request)
+        restricted = self._restricted(user, m.group("slug"))
+        if not restricted:
+            return False
+        if "project_id" in m.groupdict():
+            return m.group("project_id") in restricted
+        identifier = m.group("identifier")
+        return identifier is None or identifier.upper() in {i.upper() for i in restricted.values()}
+
+    @staticmethod
+    def _api_key_user(request):
+        """The API key's user, looked up read-only (upstream's authentication runs later, in the view)."""
+        from django.db.models import Q
+        from django.utils import timezone
+
+        from plane.db.models import APIToken
+
+        token = request.headers.get("X-Api-Key")
+        if not token:
+            return None
+        row = (
+            APIToken.objects.filter(
+                Q(expired_at__gt=timezone.now()) | Q(expired_at__isnull=True),
+                token=token,
+                is_active=True,
+                user__is_active=True,
+            )
+            .select_related("user")
+            .first()
+        )
+        return row.user if row else None

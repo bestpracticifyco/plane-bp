@@ -32,7 +32,7 @@ def test_new_projects_are_private_only_when_hardening_is_on(ws):
     assert Project.objects.create(name="B", identifier="B", workspace=ws, network=2).network == 0
 
 
-def test_project_role_cannot_exceed_workspace_role(ws, people, project):
+def test_workspace_guest_cannot_be_raised_in_a_project(ws, people, project):
     services.set_flags(ws.id, {"ext.access_hardening": True})
     pm = ProjectMember.objects.get(project=project, member=people["guest"])
     pm.role = 20  # what api/v1 projects/<id>/members/ would allow

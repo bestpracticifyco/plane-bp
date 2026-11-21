@@ -11,6 +11,7 @@ MIDDLEWARE = [  # noqa: F405
     "plane.ext.middleware.AccessHardeningMiddleware",
     "plane.ext.middleware.RequireModuleMiddleware",
     "plane.ext.middleware.TeamLayoutMiddleware",
+    "plane.ext.middleware.GuestScopeMiddleware",
 ]
 PLANE_EXT = {
     "HANDOFF_TOKEN_TTL_SECONDS": 300,

@@ -16,7 +16,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from plane.db.models import Issue, Project, ProjectMember, State, WorkspaceMember
+from plane.db.models import IntakeIssue, Issue, Project, ProjectMember, State, WorkspaceMember
 
 from . import services
 
@@ -32,7 +32,9 @@ def required_property_guard(sender, instance, **kwargs):
     check_module = services.is_enabled(instance.workspace_id, "ext.require_module")
     if not (check_props or check_module):
         return
-    groups = dict(State.objects.filter(id__in=[instance.old_values.get("state_id"), instance.state_id]).values_list("id", "group"))
+    groups = dict(
+        State.objects.filter(id__in=[instance.old_values.get("state_id"), instance.state_id]).values_list("id", "group")
+    )
     leaving_backlog = groups.get(instance.old_values.get("state_id")) in ("backlog", "triage", None)
     entering_work = groups.get(instance.state_id) not in ("backlog", "triage")
     if leaving_backlog and entering_work:
@@ -52,8 +54,10 @@ def required_property_guard(sender, instance, **kwargs):
 @receiver(pre_save, sender=Project, dispatch_uid="plane_ext_private_by_default")
 def private_by_default(sender, instance, **kwargs):
     """New projects start Private (Secret), however they are created (web, API, Governor)."""
-    if instance._state.adding and instance.workspace_id and services.is_enabled(
-        instance.workspace_id, "ext.access_hardening"
+    if (
+        instance._state.adding
+        and instance.workspace_id
+        and services.is_enabled(instance.workspace_id, "ext.access_hardening")
     ):
         instance.network = 0
 
@@ -70,8 +74,10 @@ def team_views(sender, instance, created, **kwargs):
 
 @receiver(pre_save, sender=ProjectMember, dispatch_uid="plane_ext_project_role_cap")
 def project_role_cap(sender, instance, **kwargs):
-    """A project role may not exceed the person's workspace role. Upstream's web path checks this; the
-    public API (api/v1 projects/<id>/members/) does not, so a workspace Guest could be made project Admin."""
+    """Upstream's rule on every path: a workspace Guest may only be a project Guest and a workspace Admin
+    only a project Admin; a workspace Member may hold any project role (e.g. Admin of an Intake project,
+    to triage it). Upstream's web path checks this; the public API (api/v1 projects/<id>/members/) does
+    not, so a workspace Guest could be made project Admin."""
     if not instance.member_id or not instance.is_active or not instance.workspace_id:
         return
     if not services.is_enabled(instance.workspace_id, "ext.access_hardening"):
@@ -81,8 +87,10 @@ def project_role_cap(sender, instance, **kwargs):
         .values_list("role", flat=True)
         .first()
     )
-    if ws_role is not None and instance.role > ws_role:
-        raise ValidationError({"role": ["A project role cannot be higher than the person's workspace role."]})
+    from .access import allowed_project_roles
+
+    if ws_role is not None and instance.role not in allowed_project_roles(ws_role):
+        raise ValidationError({"role": ["This project role is not allowed for the person's workspace role."]})
 
 
 @receiver(post_save, sender=WorkspaceMember, dispatch_uid="plane_ext_apply_pending_grants")
@@ -108,7 +116,9 @@ def recurrence_due_watch(sender, instance, **kwargs):
     if ExtRecurrenceRule.objects.filter(
         current_issue_id=instance.id, ended_at__isnull=True, resync_on_due_change=True
     ).exists():
-        instance._ext_old_target = Issue.all_objects.filter(id=instance.id).values_list("target_date", flat=True).first()
+        instance._ext_old_target = (
+            Issue.all_objects.filter(id=instance.id).values_list("target_date", flat=True).first()
+        )
 
 
 @receiver(post_save, sender=Issue, dispatch_uid="plane_ext_recurrence_trigger")
@@ -137,3 +147,30 @@ def recurrence_trigger(sender, instance, created, **kwargs):
         reason = "state" if rule.trigger == "state" else "completed"
         today = timezone.localdate().isoformat()
         transaction.on_commit(lambda: spawn_recurrence.delay(str(rule.id), reason, today))
+
+
+# ---------------------------------------------------------------------------------------------
+# Intake submissions (flag ext.intake_events)
+# ---------------------------------------------------------------------------------------------
+@receiver(post_save, sender=IntakeIssue, dispatch_uid="plane_ext_intake_created_webhook")
+def intake_created_webhook(sender, instance, created, **kwargs):
+    """Upstream's webhook task can describe an Intake submission (event `intake_issue`) but nothing sends
+    it, so a subscriber such as the Governor would have to poll. Send `intake_issue` / `created` once the
+    submission is committed. Upstream delivers it to every active webhook of the workspace."""
+    if not created or not instance.workspace_id or not services.is_enabled(instance.workspace_id, "ext.intake_events"):
+        return
+    from plane.bgtasks.webhook_task import model_activity
+
+    slug = instance.workspace.slug
+    actor = str(instance.created_by_id) if instance.created_by_id else None
+    transaction.on_commit(
+        lambda: model_activity.delay(
+            model_name="intake_issue",
+            model_id=str(instance.id),
+            requested_data={},
+            current_instance=None,
+            actor_id=actor,
+            slug=slug,
+            origin=None,
+        )
+    )
