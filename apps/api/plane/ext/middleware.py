@@ -91,3 +91,27 @@ class RequireModuleMiddleware:
         if not Module.objects.filter(project_id=project_id, archived_at__isnull=True).exists():
             return None
         return MODULE_REQUIRED
+
+
+_USER_PROPERTIES = re.compile(
+    r"^/api/workspaces/(?P<slug>[^/]+)/projects/(?P<project_id>[0-9a-f-]{36})/user-properties/$"
+)
+
+
+class TeamLayoutMiddleware:
+    """`ext.team_layout`: the first time a member opens a project (the web app reads their saved layout
+    from user-properties), give them the team layout before upstream answers. See plane/ext/layout.py."""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        m = _USER_PROPERTIES.match(request.path) if request.method == "GET" else None
+        if m is not None:
+            user = getattr(request, "user", None)
+            slug = m.group("slug")
+            if user is not None and user.is_authenticated and services.is_enabled_for_slug(slug, "ext.team_layout"):
+                from . import layout
+
+                layout.ensure_member_layout_safely(m.group("project_id"), user)
+        return self.get_response(request)

@@ -58,6 +58,16 @@ def private_by_default(sender, instance, **kwargs):
         instance.network = 0
 
 
+@receiver(post_save, sender=Project, dispatch_uid="plane_ext_team_views")
+def team_views(sender, instance, created, **kwargs):
+    """`ext.team_layout`: a new project gets Views on and the shared views (plane/ext/layout.py)."""
+    if not created or not instance.workspace_id or not services.is_enabled(instance.workspace_id, "ext.team_layout"):
+        return
+    from . import layout
+
+    transaction.on_commit(lambda: layout.ensure_project_views(Project.objects.get(id=instance.id)))
+
+
 @receiver(pre_save, sender=ProjectMember, dispatch_uid="plane_ext_project_role_cap")
 def project_role_cap(sender, instance, **kwargs):
     """A project role may not exceed the person's workspace role. Upstream's web path checks this; the

@@ -415,6 +415,9 @@ class ColumnPreferenceEndpoint(ExtBaseView):
     def get(self, request, slug, project_id):
         self.workspace(slug)
         self.require_project_role(slug, project_id, GUEST)
+        from .layout import ensure_member_layout_safely
+
+        ensure_member_layout_safely(project_id, request.user)  # ext.team_layout: first open of this project
         pref = ExtColumnPreference.objects.filter(user=request.user, project_id=project_id).first()
         return Response({"definition_ids": [str(i) for i in (pref.definition_ids if pref else [])]})
 
