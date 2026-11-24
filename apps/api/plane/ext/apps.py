@@ -10,3 +10,6 @@ class PlaneExtConfig(AppConfig):
 
     def ready(self):
         from . import signals  # noqa: F401  (registers the required-property guard)
+        from . import guest_scope
+
+        guest_scope.connect()

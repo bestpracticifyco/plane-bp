@@ -92,6 +92,24 @@ def workspace_role(user, slug):
     )
 
 
+def guest_scoped_projects(user, slug):
+    """{project_id: identifier} of the projects in `slug` where `user` is a Guest limited to their own work items
+    (upstream's `guest_view_all_features` off) while `ext.access_hardening` is on. Empty for everyone else."""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return {}
+    if not is_enabled_for_slug(slug, "ext.access_hardening"):
+        return {}
+    rows = ProjectMember.objects.filter(
+        member=user,
+        workspace__slug=slug,
+        is_active=True,
+        role=5,
+        project__guest_view_all_features=False,
+        project__archived_at__isnull=True,
+    ).values_list("project_id", "project__identifier")
+    return {str(pid): ident for pid, ident in rows}
+
+
 def project_role(user, slug, project_id):
     role = (
         ProjectMember.objects.filter(member=user, workspace__slug=slug, project_id=project_id, is_active=True)

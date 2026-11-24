@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Best Practicify LLC. This file is part of a fork of Plane (https://github.com/makeplane/plane).
 """Recurring work items API (flag ext.recurrence). Project Members edit; Guests read."""
 
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
@@ -9,7 +10,7 @@ from rest_framework.response import Response
 
 from plane.db.models import ProjectMember
 
-from . import recurrence, recurring
+from . import recurrence, recurring, services
 from .models import ExtRecurrenceRule
 from .views import ADMIN, GUEST, MEMBER, ExtBaseView
 
@@ -50,6 +51,8 @@ class ProjectRecurrenceEndpoint(RecurrenceBase):
         rules = ExtRecurrenceRule.objects.filter(
             project_id=project_id, ended_at__isnull=True, current_issue__isnull=False
         )
+        if str(project_id) in services.guest_scoped_projects(request.user, slug):
+            rules = rules.filter(current_issue__created_by=request.user)
         return Response(
             {str(r.current_issue_id): ("Paused · " if r.paused else "") + recurrence.summary(r.schedule) for r in rules}
         )
@@ -67,6 +70,9 @@ class WorkspaceRecurrenceEndpoint(RecurrenceBase):
         if role < ADMIN:
             mine = ProjectMember.objects.filter(member=request.user, workspace=ws, is_active=True).values("project_id")
             qs = qs.filter(project_id__in=mine)
+        scoped = services.guest_scoped_projects(request.user, slug)
+        if scoped:
+            qs = qs.exclude(Q(project_id__in=list(scoped)) & ~Q(current_issue__created_by=request.user))
         if request.query_params.get("project_id"):
             qs = qs.filter(project_id=request.query_params["project_id"])
         rows = []
