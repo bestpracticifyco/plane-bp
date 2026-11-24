@@ -16,7 +16,16 @@ from django.dispatch import receiver
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from plane.db.models import IntakeIssue, Issue, Project, ProjectMember, State, WorkspaceMember
+from plane.db.models import (
+    IntakeIssue,
+    Issue,
+    IssueSubscriber,
+    Notification,
+    Project,
+    ProjectMember,
+    State,
+    WorkspaceMember,
+)
 
 from . import services
 
@@ -174,3 +183,35 @@ def intake_created_webhook(sender, instance, created, **kwargs):
             origin=None,
         )
     )
+
+
+# ---------------------------------------------------------------------------------------------
+# Guests limited to their own items (flag ext.access_hardening)
+# ---------------------------------------------------------------------------------------------
+def _scoped_out(user_id, issue_id):
+    """True when `user_id` is a Guest limited to own items in the issue's project and did not create it."""
+    issue = Issue.all_objects.filter(id=issue_id).select_related("workspace").only(
+        "id", "project_id", "created_by_id", "workspace__slug"
+    ).first()
+    if issue is None or issue.created_by_id == user_id:
+        return False
+    from plane.db.models import User
+
+    user = User.objects.filter(id=user_id).first()
+    return str(issue.project_id) in services.guest_scoped_projects(user, issue.workspace.slug)
+
+
+@receiver(post_save, sender=IssueSubscriber, dispatch_uid="plane_ext_guest_scope_subscriber")
+def guest_scope_subscriber(sender, instance, created, **kwargs):
+    """An @mention or a manual "add subscriber" would subscribe a Guest to someone else's item, and from then
+    on its title and updates reach them (notifications, My work, dashboard). Drop that subscription."""
+    if created and _scoped_out(instance.subscriber_id, instance.issue_id):
+        IssueSubscriber.all_objects.filter(id=instance.id).delete()
+
+
+@receiver(post_save, sender=Notification, dispatch_uid="plane_ext_guest_scope_notification")
+def guest_scope_notification(sender, instance, created, **kwargs):
+    """Belt and braces for the above: no notification about someone else's item reaches such a Guest."""
+    if created and instance.entity_name == "issue" and instance.entity_identifier:
+        if _scoped_out(instance.receiver_id, instance.entity_identifier):
+            Notification.all_objects.filter(id=instance.id).delete()

@@ -341,6 +341,8 @@ class ProjectValuesEndpoint(ExtBaseView):
         self.require_project_role(slug, project_id, GUEST)
         ids = request.query_params.get("issue_ids")
         qs = Issue.issue_objects.filter(project_id=project_id, workspace=ws)
+        if str(project_id) in services.guest_scoped_projects(request.user, slug):
+            qs = qs.filter(created_by=request.user)  # a Guest limited to own items sees only their values
         if ids:
             qs = qs.filter(id__in=[i for i in ids.split(",") if i])
         issue_ids = list(qs.values_list("id", flat=True)[: self.MAX_ITEMS])
