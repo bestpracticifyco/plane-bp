@@ -7,6 +7,9 @@ import { API_BASE_URL } from "@plane/constants";
 import { APIService } from "@/services/api.service";
 import type {
   TExtAccessCell,
+  TExtAttendanceMe,
+  TExtAttendanceSettings,
+  TExtAttendanceTeam,
   TExtAccessMatrix,
   TExtBinding,
   TExtDefinition,
@@ -98,5 +101,22 @@ export class ExtService extends APIService {
   }
   recurrenceAction(ws: string, ruleId: string, action: "pause" | "resume" | "skip" | "stop") {
     return this.call<TExtRecurrenceRule | null>(this.post(`${BASE}/${ws}/recurrence/${ruleId}/${action}/`, {}));
+  }
+  getMyAttendance(ws: string, month?: string) {
+    return this.call<TExtAttendanceMe>(this.get(`${BASE}/${ws}/attendance/me/`, { params: month ? { month } : {} }));
+  }
+  clock(ws: string, action: "clock-in" | "clock-out", note?: string) {
+    return this.call<TExtAttendanceMe>(this.post(`${BASE}/${ws}/attendance/${action}/`, note ? { note } : {}));
+  }
+  getTeamAttendance(ws: string, month?: string) {
+    return this.call<TExtAttendanceTeam>(
+      this.get(`${BASE}/${ws}/attendance/team/`, { params: month ? { month } : {} })
+    );
+  }
+  getAttendanceSettings(ws: string) {
+    return this.call<TExtAttendanceSettings>(this.get(`${BASE}/${ws}/attendance/settings/`));
+  }
+  setAttendanceSettings(ws: string, settings: TExtAttendanceSettings) {
+    return this.call<TExtAttendanceSettings>(this.put(`${BASE}/${ws}/attendance/settings/`, settings));
   }
 }

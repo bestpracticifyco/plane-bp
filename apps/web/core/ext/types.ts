@@ -144,3 +144,90 @@ export type TExtRecurrenceInput = Partial<
 
 /** Column-preference id of the "Repeats" pseudo-column (server: views.REPEATS_COLUMN_ID). */
 export const EXT_REPEATS_COLUMN_ID = "00000000-0000-4000-8000-000000000001";
+
+// -- Attendance (flag ext.attendance) ------------------------------------------------------------
+export type TExtAttendanceStatus =
+  | "present"
+  | "late"
+  | "excused_late"
+  | "absent"
+  | "holiday"
+  | "time_off"
+  | "vacation"
+  | "sick_leave"
+  | "unplanned_leave";
+
+export type TExtAttendanceDay = {
+  date: string;
+  status: TExtAttendanceStatus | null;
+  clock_in: string | null;
+  clock_out: string | null;
+  hours: number | null;
+  issue_id: string;
+  project_id: string;
+  identifier: string;
+  name: string;
+};
+
+export type TExtAttendanceToday = {
+  date: string;
+  kind: "work" | "off" | "holiday";
+  holiday: string;
+  shift_start: string | null;
+  late_after: string | null;
+  day: TExtAttendanceDay | null;
+  /** last night's shift, still open and recent enough to clock out of */
+  open_yesterday: TExtAttendanceDay | null;
+  now: string;
+};
+
+export type TExtAttendanceSummary = {
+  counts: Record<TExtAttendanceStatus, number>;
+  working_days: number;
+  hours: number;
+  missing_clock_out: number;
+};
+
+export type TExtAttendanceMe = {
+  timezone: string;
+  project_id: string;
+  month: string;
+  today: TExtAttendanceToday;
+  days: TExtAttendanceDay[];
+  summary: TExtAttendanceSummary;
+};
+
+export type TExtAttendancePerson = {
+  member_id: string;
+  name: string;
+  full_name: string;
+  project_id: string;
+  project_identifier: string;
+  today: TExtAttendanceToday;
+  days: TExtAttendanceDay[];
+  summary: TExtAttendanceSummary;
+};
+
+export type TExtAttendanceTeam = { timezone: string; month: string; people: TExtAttendancePerson[] };
+
+export type TExtAttendanceSchedule = {
+  id?: string;
+  member_id: string | null;
+  effective_from: string;
+  shift_start: string;
+  grace_minutes: number;
+  workdays: number[];
+  saturdays: number[];
+};
+
+export type TExtAttendanceSettings = {
+  configured: boolean;
+  timezone: string;
+  recorder_id: string | null;
+  time_off_project_id: string | null;
+  mark_absent: boolean;
+  mark_absent_from: string | null;
+  schedules: TExtAttendanceSchedule[];
+  holidays: { date: string; name: string }[];
+  people: { member_id: string; project_id: string; is_active: boolean }[];
+};

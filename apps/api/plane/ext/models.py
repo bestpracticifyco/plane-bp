@@ -301,3 +301,113 @@ class ExtRecurrenceSpawn(BaseModel):
                 name="plane_ext_recurrence_spawn_once",
             )
         ]
+
+
+# ---------------------------------------------------------------------------------------------
+# Attendance (flag ext.attendance): Clock in / Clock out. Each day is a work item in the person's
+# own Staff file project; these tables hold only the rules (when the shift starts, which days are
+# working days) and the one-item-per-person-per-day index. The work item is the record.
+# ---------------------------------------------------------------------------------------------
+def default_workdays():
+    return [7, 1, 2, 3, 4]  # ISO weekdays: Sunday to Thursday
+
+
+def default_saturdays():
+    return [2, 3]  # the 2nd and 3rd Saturday of each month are working days
+
+
+class ExtAttendanceSettings(BaseModel):
+    workspace = models.OneToOneField("db.Workspace", on_delete=models.CASCADE, related_name="ext_attendance")
+    timezone = models.CharField(max_length=64, default="Asia/Dhaka")
+    # who the day's items are created by (a workspace Admin), so staff cannot edit their own record
+    recorder = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+    time_off_project = models.ForeignKey(
+        "db.Project", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    mark_absent = models.BooleanField(default=True)
+    mark_absent_from = models.DateField(null=True, blank=True)  # no Absent items before this day
+
+    class Meta:
+        db_table = "plane_ext_attendance_settings"
+
+
+class ExtAttendanceSchedule(BaseModel):
+    """The shift from `effective_from` until the next row. `member` set = that person only."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="ext_attendance_schedules")
+    member = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name="+"
+    )
+    effective_from = models.DateField()
+    shift_start = models.TimeField()
+    grace_minutes = models.PositiveSmallIntegerField(default=15)
+    workdays = ArrayField(models.PositiveSmallIntegerField(), default=default_workdays, blank=True)
+    saturdays = ArrayField(models.PositiveSmallIntegerField(), default=default_saturdays, blank=True)
+
+    class Meta:
+        db_table = "plane_ext_attendance_schedules"
+        ordering = ("effective_from",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "member", "effective_from"],
+                condition=Q(deleted_at__isnull=True),
+                name="plane_ext_attendance_schedule_unique",
+                nulls_distinct=False,
+            )
+        ]
+
+
+class ExtAttendanceHoliday(BaseModel):
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="ext_attendance_holidays")
+    date = models.DateField()
+    name = models.CharField(max_length=120)
+
+    class Meta:
+        db_table = "plane_ext_attendance_holidays"
+        ordering = ("date",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "date"],
+                condition=Q(deleted_at__isnull=True),
+                name="plane_ext_attendance_holiday_unique",
+            )
+        ]
+
+
+class ExtAttendancePerson(BaseModel):
+    """Someone who clocks in; their days go into `project` (their private Staff file)."""
+
+    workspace = models.ForeignKey("db.Workspace", on_delete=models.CASCADE, related_name="ext_attendance_people")
+    member = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="ext_attendance_people")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "plane_ext_attendance_people"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workspace", "member"],
+                condition=Q(deleted_at__isnull=True),
+                name="plane_ext_attendance_person_unique",
+            )
+        ]
+
+
+class ExtAttendanceDay(BaseModel):
+    """Index: the one work item for (person, day). Clock times live on the item (ext properties)."""
+
+    person = models.ForeignKey(ExtAttendancePerson, on_delete=models.CASCADE, related_name="days")
+    date = models.DateField()
+    issue = models.ForeignKey("db.Issue", on_delete=models.CASCADE, related_name="ext_attendance_day")
+    source = models.CharField(max_length=16, default="clock")  # clock | auto | import
+
+    class Meta:
+        db_table = "plane_ext_attendance_days"
+        ordering = ("-date",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=["person", "date"],
+                condition=Q(deleted_at__isnull=True),
+                name="plane_ext_attendance_day_unique",
+            )
+        ]

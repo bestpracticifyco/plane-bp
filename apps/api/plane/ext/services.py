@@ -38,6 +38,7 @@ FLAG_DEFAULTS = {
     "ext.recurrence": False,  # recurring work items
     "ext.team_layout": False,  # shared views on new projects; members start from the team layout
     "ext.intake_events": False,  # webhook event when someone submits to a project's Intake (AI first-pass triage)
+    "ext.attendance": False,  # Clock in / Clock out into each person's own Staff file
 }
 _FLAG_CACHE_SECONDS = 60
 

@@ -4,7 +4,7 @@
 
 from django.urls import path
 
-from . import views, views_access, views_recurrence
+from . import views, views_access, views_attendance, views_recurrence
 
 WS = "workspaces/<str:slug>"
 PRJ = WS + "/projects/<uuid:project_id>"
@@ -27,6 +27,18 @@ urlpatterns = [
         f"{WS}/recurrence/<uuid:pk>/<str:action>/",
         views_recurrence.RuleActionEndpoint.as_view(),
         name="ext-recurrence-action",
+    ),
+    path(f"{WS}/attendance/me/", views_attendance.MyAttendanceEndpoint.as_view(), name="ext-attendance-me"),
+    path(f"{WS}/attendance/team/", views_attendance.TeamAttendanceEndpoint.as_view(), name="ext-attendance-team"),
+    path(
+        f"{WS}/attendance/settings/",
+        views_attendance.AttendanceSettingsEndpoint.as_view(),
+        name="ext-attendance-settings",
+    ),
+    path(
+        f"{WS}/attendance/<str:action>/",
+        views_attendance.ClockEndpoint.as_view(),
+        name="ext-attendance-clock",
     ),
     path(f"{WS}/handoff/", views.HandoffEndpoint.as_view(), name="ext-handoff"),
     path(f"{PRJ}/bindings/", views.BindingEndpoint.as_view(), name="ext-bindings"),
