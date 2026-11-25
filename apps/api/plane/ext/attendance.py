@@ -15,7 +15,8 @@ Rules (ExtAttendanceSchedule, from `effective_from` until the next row; a person
 - Working days = `workdays` (ISO weekday numbers) plus the `saturdays`-th Saturdays of the month,
   minus holidays (ExtAttendanceHoliday).
 - After a working day ends, anyone with no item for it gets one: Holiday, the accepted time off's
-  leave type, or Absent (noting any request still pending). Never before `mark_absent_from`.
+  leave type, or Absent (noting any request still pending). Never before `mark_absent_from`, and never
+  for someone whose clocking in is optional (ExtAttendancePerson.mark_absent off).
 Clock times come from the server clock, never from the browser.
 """
 
@@ -432,7 +433,7 @@ def relabel_after_edit(issue_id):
 # -- end of day ---------------------------------------------------------------------------------
 def close_day(person, cfg, day):
     """Give a past day with no item its Holiday / leave / Absent item. Returns the status or None."""
-    if not cfg.mark_absent or (cfg.mark_absent_from and day < cfg.mark_absent_from):
+    if not cfg.mark_absent or not person.mark_absent or (cfg.mark_absent_from and day < cfg.mark_absent_from):
         return None
     if day < person.created_at.astimezone(zone(cfg)).date() or _live_day(person, day) is not None:
         return None
@@ -647,7 +648,12 @@ def settings_json(workspace_id):
             for h in ExtAttendanceHoliday.objects.filter(workspace_id=workspace_id).order_by("date")
         ],
         "people": [
-            {"member_id": str(p.member_id), "project_id": str(p.project_id), "is_active": p.is_active}
+            {
+                "member_id": str(p.member_id),
+                "project_id": str(p.project_id),
+                "is_active": p.is_active,
+                "mark_absent": p.mark_absent,
+            }
             for p in ExtAttendancePerson.objects.filter(workspace_id=workspace_id)
         ],
     }
@@ -748,7 +754,7 @@ def apply_settings(workspace, actor, data):
             raise ValidationError({f"people[{i}].project_id": "Unknown project."})
         if not ProjectMember.objects.filter(project_id=project, member_id=member, is_active=True).exists():
             raise ValidationError({f"people[{i}].project_id": "The person must be a member of their Staff file."})
-        people[member] = (project, bool(p.get("is_active", True)))
+        people[member] = (project, bool(p.get("is_active", True)), bool(p.get("mark_absent", True)))
 
     with transaction.atomic():
         ExtAttendanceSettings.objects.update_or_create(
@@ -773,13 +779,13 @@ def apply_settings(workspace, actor, data):
             if str(person.member_id) not in people:
                 person.is_active = False
                 person.save(update_fields=["is_active", "updated_at"])
-        for member, (project, active) in people.items():
+        for member, (project, active, absent) in people.items():
             person = ExtAttendancePerson.objects.filter(workspace_id=ws_id, member_id=member).first()
             if person is None:
                 ExtAttendancePerson.objects.create(
-                    workspace_id=ws_id, member_id=member, project_id=project, is_active=active
+                    workspace_id=ws_id, member_id=member, project_id=project, is_active=active, mark_absent=absent
                 )
-            elif (str(person.project_id), person.is_active) != (project, active):
-                person.project_id, person.is_active = project, active
-                person.save(update_fields=["project_id", "is_active", "updated_at"])
+            elif (str(person.project_id), person.is_active, person.mark_absent) != (project, active, absent):
+                person.project_id, person.is_active, person.mark_absent = project, active, absent
+                person.save(update_fields=["project_id", "is_active", "mark_absent", "updated_at"])
     return settings_json(ws_id)

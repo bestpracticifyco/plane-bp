@@ -381,6 +381,7 @@ class ExtAttendancePerson(BaseModel):
     member = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
     project = models.ForeignKey("db.Project", on_delete=models.CASCADE, related_name="ext_attendance_people")
     is_active = models.BooleanField(default=True)
+    mark_absent = models.BooleanField(default=True)  # False: clocking in is optional, missed days stay blank
 
     class Meta:
         db_table = "plane_ext_attendance_people"

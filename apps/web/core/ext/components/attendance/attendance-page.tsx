@@ -731,6 +731,19 @@ function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string;
               />
               Active
             </label>
+            <label className="flex items-center gap-1" title="Off: clocking in is optional; missed days stay blank">
+              <input
+                type="checkbox"
+                checked={p.mark_absent}
+                onChange={(e) =>
+                  set(
+                    "people",
+                    draft.people.map((x, j) => (j === i ? { ...x, mark_absent: e.target.checked } : x))
+                  )
+                }
+              />
+              Mark missed days
+            </label>
             <button
               type="button"
               className="text-danger-primary"
@@ -748,7 +761,9 @@ function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string;
         <div>
           <Button
             variant="secondary"
-            onClick={() => set("people", [...draft.people, { member_id: "", project_id: "", is_active: true }])}
+            onClick={() =>
+              set("people", [...draft.people, { member_id: "", project_id: "", is_active: true, mark_absent: true }])
+            }
           >
             Add a person
           </Button>

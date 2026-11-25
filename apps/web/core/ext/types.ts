@@ -229,5 +229,6 @@ export type TExtAttendanceSettings = {
   mark_absent_from: string | null;
   schedules: TExtAttendanceSchedule[];
   holidays: { date: string; name: string }[];
-  people: { member_id: string; project_id: string; is_active: boolean }[];
+  /** mark_absent off: clocking in is optional for that person (missed days stay blank) */
+  people: { member_id: string; project_id: string; is_active: boolean; mark_absent: boolean }[];
 };

@@ -247,9 +247,13 @@ def test_day_close_marks_absent_holiday_and_leave_once(ws, people, setup, hr):
         assert attendance.run_due() == 4  # Thu 17 and Sat 19 (3rd Saturday) for both; Fri 18 is off
 
 
-def test_day_close_respects_start_date_and_flag(ws, people, setup):
+def test_day_close_respects_start_date_optional_people_and_flag(ws, people, setup):
     cfg = attendance.config(ws.id)
     assert attendance.close_day(setup["guest"], cfg, D(2026, 10, 29)) is None  # before mark_absent_from
+    setup["member"].mark_absent = False  # clocking in is optional for them
+    setup["member"].save()
+    assert attendance.close_day(setup["member"], cfg, D(2026, 11, 25)) is None
+    assert attendance.close_day(setup["guest"], cfg, D(2026, 11, 25)) == "absent"
     services.set_flags(ws.id, {"ext.attendance": False})
     with freeze_time(utc(at(2026, 11, 26, 0, 10))):
         assert attendance.run_due() == 0
@@ -308,6 +312,9 @@ def test_settings_are_admin_only_and_validated(ws, people, setup, client_for, ba
         "people": [{"member_id": str(people["guest"].id), "project_id": str(setup["sf_member"].id)}],
     }
     assert admin.put(url, wrong_file, format="json").status_code == 400
+    optional = [{**p, "mark_absent": p["member_id"] != str(people["member"].id)} for p in payload["people"]]
+    assert admin.put(url, {**payload, "people": optional}, format="json").status_code == 200
+    assert ExtAttendancePerson.objects.get(workspace=ws, member=people["member"]).mark_absent is False
     dropped = admin.put(url, {**payload, "people": payload["people"][:1]}, format="json")
     assert dropped.status_code == 200
     assert ExtAttendancePerson.objects.filter(workspace=ws, is_active=True).count() == 1

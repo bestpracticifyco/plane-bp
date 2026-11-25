@@ -36,6 +36,7 @@ class Migration(migrations.Migration):
                     ),
                 ),
                 ("is_active", models.BooleanField(default=True)),
+                ("mark_absent", models.BooleanField(default=True)),
                 (
                     "created_by",
                     models.ForeignKey(
