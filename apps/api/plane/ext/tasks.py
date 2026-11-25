@@ -9,10 +9,15 @@ from celery import shared_task
 
 @shared_task(name="plane.ext.tasks.tick")
 def tick():
-    """Every 5 minutes: pending project grants, scheduled recurrences, missed completion triggers."""
-    from . import access, recurring
+    """Every 5 minutes: pending project grants, scheduled recurrences, missed completion triggers,
+    and the attendance day close (Holiday / time off / Absent items for past working days)."""
+    from . import access, attendance, recurring
 
-    return {"grants_applied": access.apply_all_pending(), "recurrences_spawned": recurring.run_due()}
+    return {
+        "grants_applied": access.apply_all_pending(),
+        "recurrences_spawned": recurring.run_due(),
+        "attendance_days_closed": attendance.run_due(),
+    }
 
 
 @shared_task(name="plane.ext.tasks.spawn_recurrence", autoretry_for=(Exception,), retry_backoff=30, max_retries=5)

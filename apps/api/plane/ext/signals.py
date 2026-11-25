@@ -215,3 +215,17 @@ def guest_scope_notification(sender, instance, created, **kwargs):
     if created and instance.entity_name == "issue" and instance.entity_identifier:
         if _scoped_out(instance.receiver_id, instance.entity_identifier):
             Notification.all_objects.filter(id=instance.id).delete()
+
+
+# ---------------------------------------------------------------------------------------------
+# Attendance (flag ext.attendance)
+# ---------------------------------------------------------------------------------------------
+@receiver(post_save, sender="plane_ext.ExtPropertyValue", dispatch_uid="plane_ext_attendance_relabel")
+def attendance_relabel(sender, instance, **kwargs):
+    """HR corrected a day's Clock in: re-derive Present / Late / Excused late after the save commits."""
+    if instance.definition.key != "clock_in":
+        return
+    issue_id = instance.issue_id
+    from . import attendance
+
+    transaction.on_commit(lambda: attendance.relabel_after_edit(issue_id))

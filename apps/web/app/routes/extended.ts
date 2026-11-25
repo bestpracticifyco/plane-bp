@@ -7,13 +7,14 @@
 import { layout, route } from "@react-router/dev/routes";
 import type { RouteConfigEntry } from "@react-router/dev/routes";
 
-// Best Practicify fork (see FORK.md): embedded Governor pages. Layout file keys match routes/core.ts
+// Best Practicify fork (see FORK.md): embedded Governor pages and Attendance (Clock in / Clock out). Layout file keys match routes/core.ts
 // character for character so upstream's mergeRoutes deep-merges them into the workspace layout.
 export const extendedRoutes: RouteConfigEntry[] = [
   layout("./(all)/layout.tsx", [
     layout("./(all)/[workspaceSlug]/layout.tsx", [
       layout("./(all)/[workspaceSlug]/(projects)/layout.tsx", [
         route(":workspaceSlug/governor", "./ext/governor/page.tsx"),
+        route(":workspaceSlug/attendance", "./ext/attendance/page.tsx"),
       ]),
     ]),
   ]),
