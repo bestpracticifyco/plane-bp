@@ -41,6 +41,7 @@ from plane.db.models import (
     ModuleIssue,
     ProjectMember,
     State,
+    Workspace,
     WorkspaceMember,
 )
 
@@ -621,10 +622,66 @@ def team_json(workspace_id, viewer, month=None, now=None):
     return {"timezone": cfg.timezone, "month": first.strftime("%Y-%m"), "people": out}
 
 
-# -- settings (workspace Admin) -----------------------------------------------------------------
-def settings_json(workspace_id):
+# -- settings (workspace Admins; HR managers for the rota) -------------------------------------------
+GENERAL = ("timezone", "recorder_id", "time_off_project_id", "mark_absent", "mark_absent_from")
+
+
+def settings_access(workspace_id, user):
+    """ "admin" (workspace Admin: everything), "hr" (Admin of the HR project set as the time-off source: shift
+    schedule, holidays and the people whose Staff file they are an Admin of, never their own row) or None."""
+    role = services.workspace_role(user, Workspace.objects.get(id=workspace_id).slug)
+    if role is not None and role >= 20:
+        return "admin"
     cfg = config(workspace_id)
+    if role is None or role < 15 or cfg is None or cfg.time_off_project_id is None:
+        return None
+    hr = ProjectMember.objects.filter(project_id=cfg.time_off_project_id, member=user, is_active=True, role__gte=20)
+    return "hr" if hr.exists() else None
+
+
+def _managed_files(workspace_id, user, access):
+    """Projects whose people an HR manager may add, change or remove in the settings."""
+    from plane.db.models import Project
+
+    projects = Project.objects.filter(workspace_id=workspace_id, archived_at__isnull=True)
+    if access != "admin":
+        projects = projects.filter(
+            id__in=ProjectMember.objects.filter(member=user, is_active=True, role__gte=20).values("project_id")
+        )
+    return projects.order_by("name")
+
+
+def _person_editable(person_member_id, project_id, user, access, managed):
+    if access == "admin":
+        return True
+    return str(person_member_id) != str(user.id) and str(project_id) in managed
+
+
+def settings_json(workspace_id, user=None, access="admin"):
+    cfg = config(workspace_id)
+    managed = (
+        {str(p) for p in _managed_files(workspace_id, user, access).values_list("id", flat=True)} if user else set()
+    )
+    directory = {
+        "members": [
+            {
+                "id": str(m.member_id),
+                "display_name": m.member.display_name,
+                "email": m.member.email,
+                "workspace_role": m.role,
+            }
+            for m in WorkspaceMember.objects.filter(workspace_id=workspace_id, is_active=True)
+            .select_related("member")
+            .order_by("member__display_name")
+        ],
+        "projects": [
+            {"id": str(p.id), "name": p.name, "identifier": p.identifier}
+            for p in (_managed_files(workspace_id, user, access) if user else [])
+        ],
+    }
     return {
+        "access": access,
+        "directory": directory,
         "configured": cfg is not None,
         "timezone": cfg.timezone if cfg else "Asia/Dhaka",
         "recorder_id": str(cfg.recorder_id) if cfg and cfg.recorder_id else None,
@@ -653,8 +710,10 @@ def settings_json(workspace_id):
                 "project_id": str(p.project_id),
                 "is_active": p.is_active,
                 "mark_absent": p.mark_absent,
+                "editable": _person_editable(p.member_id, p.project_id, user, access, managed) if user else True,
+                "project_name": p.project.name,
             }
-            for p in ExtAttendancePerson.objects.filter(workspace_id=workspace_id)
+            for p in ExtAttendancePerson.objects.filter(workspace_id=workspace_id).select_related("project")
         ],
     }
 
@@ -683,9 +742,14 @@ def _days(values, allowed, field):
     return out
 
 
-def apply_settings(workspace, actor, data):
-    """Replace the attendance settings, schedules, holidays and people with `data` (one transaction)."""
+def apply_settings(workspace, actor, data, access="admin"):
+    """Replace the attendance settings, schedules, holidays and people with `data` (one transaction).
+    An HR manager's general fields are ignored (the current ones are kept), and people rows they may not
+    edit (their own, or a Staff file they are not an Admin of) are kept exactly as they are."""
     ws_id = workspace.id
+    if access != "admin":
+        current = settings_json(ws_id)
+        data = {**data, **{k: current[k] for k in GENERAL}}
     members = set(
         WorkspaceMember.objects.filter(workspace_id=ws_id, is_active=True).values_list("member_id", flat=True)
     )
@@ -755,6 +819,21 @@ def apply_settings(workspace, actor, data):
         if not ProjectMember.objects.filter(project_id=project, member_id=member, is_active=True).exists():
             raise ValidationError({f"people[{i}].project_id": "The person must be a member of their Staff file."})
         people[member] = (project, bool(p.get("is_active", True)), bool(p.get("mark_absent", True)))
+    if access != "admin":
+        managed = {str(p) for p in _managed_files(ws_id, actor, access).values_list("id", flat=True)}
+        existing = {str(p.member_id): p for p in ExtAttendancePerson.objects.filter(workspace_id=ws_id)}
+        for member, row in list(people.items()):
+            old = existing.get(member)
+            if old is not None and (str(old.project_id), old.is_active, old.mark_absent) == row:
+                continue
+            if not _person_editable(member, row[0], actor, access, managed) or (
+                old is not None and not _person_editable(member, old.project_id, actor, access, managed)
+            ):
+                raise ValidationError({"people": "You can change only the people whose Staff file you manage."})
+        for member, old in existing.items():
+            if member not in people and old.is_active:
+                if not _person_editable(member, old.project_id, actor, access, managed):
+                    raise ValidationError({"people": "You can change only the people whose Staff file you manage."})
 
     with transaction.atomic():
         ExtAttendanceSettings.objects.update_or_create(
@@ -788,4 +867,4 @@ def apply_settings(workspace, actor, data):
             elif (str(person.project_id), person.is_active, person.mark_absent) != (project, active, absent):
                 person.project_id, person.is_active, person.mark_absent = project, active, absent
                 person.save(update_fields=["project_id", "is_active", "mark_absent", "updated_at"])
-    return settings_json(ws_id)
+    return settings_json(ws_id, actor, access)

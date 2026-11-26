@@ -221,6 +221,12 @@ export type TExtAttendanceSchedule = {
 };
 
 export type TExtAttendanceSettings = {
+  /** admin: everything; hr (an Admin of the HR project): shift schedule, holidays and the people they manage */
+  access: "admin" | "hr";
+  directory: {
+    members: { id: string; display_name: string; email: string; workspace_role: number }[];
+    projects: { id: string; name: string; identifier: string }[];
+  };
   configured: boolean;
   timezone: string;
   recorder_id: string | null;
@@ -230,5 +236,13 @@ export type TExtAttendanceSettings = {
   schedules: TExtAttendanceSchedule[];
   holidays: { date: string; name: string }[];
   /** mark_absent off: clocking in is optional for that person (missed days stay blank) */
-  people: { member_id: string; project_id: string; is_active: boolean; mark_absent: boolean }[];
+  people: {
+    member_id: string;
+    project_id: string;
+    is_active: boolean;
+    mark_absent: boolean;
+    /** false: an HR manager's own row, or a Staff file they don't manage (shown, not changeable) */
+    editable?: boolean;
+    project_name?: string;
+  }[];
 };

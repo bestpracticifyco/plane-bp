@@ -290,9 +290,10 @@ def test_team_view_is_hr_only(ws, people, setup, client_for, base):
 
 def test_settings_are_admin_only_and_validated(ws, people, setup, client_for, base):
     url = f"{base}/attendance/settings/"
-    assert client_for(people["member"]).get(url).status_code == 403
+    assert client_for(people["guest"]).get(url).status_code == 403
     admin = client_for(people["admin"])
     current = admin.get(url).json()
+    assert current["access"] == "admin" and all(p["editable"] for p in current["people"])
     assert [s["shift_start"] for s in current["schedules"]] == ["09:00", "07:30"]
     payload = {
         **current,
@@ -318,3 +319,45 @@ def test_settings_are_admin_only_and_validated(ws, people, setup, client_for, ba
     dropped = admin.put(url, {**payload, "people": payload["people"][:1]}, format="json")
     assert dropped.status_code == 200
     assert ExtAttendancePerson.objects.filter(workspace=ws, is_active=True).count() == 1
+
+
+def test_hr_manager_edits_rota_and_managed_people_only(ws, people, setup, client_for, base):
+    """'member' is an Admin of HR (the time-off project) and of SFGUEST, but not a workspace Admin."""
+    url = f"{base}/attendance/settings/"
+    hr_user = client_for(people["member"])
+    current = hr_user.get(url).json()
+    assert current["access"] == "hr"
+    assert sorted(p["identifier"] for p in current["directory"]["projects"]) == ["HR", "SFGUEST"]
+    editable = {p["member_id"]: p["editable"] for p in current["people"]}
+    assert editable == {str(people["guest"].id): True, str(people["member"].id): False}
+
+    payload = {
+        **current,
+        "timezone": "UTC",
+        "recorder_id": str(people["member"].id),
+        "mark_absent": False,
+        "holidays": current["holidays"] + [{"date": "2027-02-21", "name": "Language Martyrs' Day"}],
+        "schedules": current["schedules"] + [{"effective_from": "2027-03-01", "shift_start": "08:00"}],
+    }
+    r = hr_user.put(url, payload, format="json")
+    assert r.status_code == 200, r.content
+    cfg = ExtAttendanceSettings.objects.get(workspace=ws)
+    assert (cfg.timezone, cfg.recorder_id, cfg.mark_absent) == ("Asia/Dhaka", people["admin"].id, True)
+    assert ExtAttendanceHoliday.objects.filter(workspace=ws).count() == 2
+    assert attendance.schedule_for(ws.id, None, D(2027, 3, 2)).shift_start == dt.time(8, 0)
+
+    def people_with(**changes):
+        rows = [{**p, **changes.get(p["member_id"], {})} for p in current["people"]]
+        return {**current, "people": [p for p in rows if not p.get("drop")]}
+
+    own = people_with(**{str(people["member"].id): {"mark_absent": False}})
+    assert hr_user.put(url, own, format="json").status_code == 400
+    assert hr_user.put(url, people_with(**{str(people["member"].id): {"drop": True}}), format="json").status_code == 400
+    assert ExtAttendancePerson.objects.get(workspace=ws, member=people["member"]).is_active
+    managed = people_with(**{str(people["guest"].id): {"mark_absent": False}})
+    assert hr_user.put(url, managed, format="json").status_code == 200
+    assert ExtAttendancePerson.objects.get(workspace=ws, member=people["guest"]).mark_absent is False
+
+    ProjectMember.objects.filter(project__identifier="HR", member=people["member"]).update(role=15)
+    assert hr_user.get(url).status_code == 403
+    assert client_for(people["outsider"]).get(url).status_code == 403
