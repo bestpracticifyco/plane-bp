@@ -10,8 +10,8 @@
 - Overlay code lives only in: `apps/api/plane/ext/`, `apps/api/plane/settings/bp.py`,
   `apps/web/core/ext/`, `apps/web/app/ext/`, and upstream's `extended.*` seam files.
 - Any other upstream file changes only through `patches/NNNN-*.patch`, applied at build time.
-  Owner-approved ceiling (gate H6, re-opened and approved 11 Nov 2026, again 16 Nov 2026 for 0006):
-  6 patch files, 16 hunks, 23 added lines; 0 deleted upstream lines except the one-line dependency pin replaced by patch 0005.
+  Owner-approved ceiling (gate H6, re-opened and approved 11 Nov 2026, again 16 Nov 2026 for 0006, 26 Nov 2026 for the Attendance nav entry):
+  6 patch files, 16 hunks, 31 added lines; 0 deleted upstream lines except the one-line dependency pin replaced by patch 0005.
   Exceeding any figure re-opens the gate. Patch 0005 is dropped when upstream pins PyJWT >= 2.14.0.
 - `scripts/check-fork-discipline.sh` (CI job `discipline`) enforces forbidden paths, migration
   location, SPDX headers and the no-licence-code rule, and prints the ledger below.

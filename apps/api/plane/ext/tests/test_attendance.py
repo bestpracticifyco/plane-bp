@@ -197,6 +197,18 @@ def test_clock_out_needs_a_clock_in_and_closes_last_nights_shift(ws, people, set
     assert attendance.day_json(row, DHAKA)["hours"] == 4.0
 
 
+def test_make_up_hours_on_a_day_off_or_holiday_are_never_late(ws, people, setup):
+    friday = attendance.clock_in(ws.id, people["guest"], now=at(2026, 12, 4, 11, 0))
+    assert (friday["status"], friday["name"]) == ("present", "Attendance: Fri, Dec 4, 2026 · day off")
+    out = attendance.clock_out(ws.id, people["guest"], now=at(2026, 12, 4, 15, 30))
+    assert out["hours"] == 4.5
+    holiday = attendance.clock_in(ws.id, people["guest"], now=at(2026, 12, 16, 10, 0))
+    assert (holiday["status"], holiday["name"]) == ("present", "Attendance: Wed, Dec 16, 2026 · holiday")
+    assert attendance.close_day(setup["guest"], attendance.config(ws.id), D(2026, 12, 16)) is None
+    me = attendance.me_json(ws.id, people["guest"], D(2026, 12, 1), now=at(2026, 12, 17, 9, 0))
+    assert me["summary"]["hours"] == 4.5 and me["summary"]["counts"]["present"] == 2
+
+
 def test_late_arrival_covered_by_accepted_time_off_is_excused(ws, people, setup, hr):
     time_off(hr, people["guest"], D(2026, 11, 25), D(2026, 11, 25), 1, leave="Late arrival")
     day = attendance.clock_in(ws.id, people["guest"], now=at(2026, 11, 25, 9, 0))

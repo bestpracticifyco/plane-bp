@@ -118,9 +118,10 @@ def late_after(schedule, day, tz):
     return start + dt.timedelta(minutes=schedule.grace_minutes)
 
 
-def arrival_status(schedule, clock_in, tz, excused):
-    """present | late | excused_late for a clock-in time (aware datetime)."""
-    if schedule is None:
+def arrival_status(schedule, clock_in, tz, excused, kind="work"):
+    """present | late | excused_late for a clock-in time (aware datetime). On a day off or a holiday
+    (someone coming in to make up hours) there is no shift to be late for: always present."""
+    if schedule is None or kind != "work":
         return "present"
     local = clock_in.astimezone(tz)
     if local <= late_after(schedule, local.date(), tz):
@@ -205,6 +206,8 @@ def title(day, kind, schedule):
         text += f" · {ORDINAL[nth_weekday_of_month(day)]} Saturday"
     if kind == "off":
         text += " · day off"
+    if kind == "holiday":
+        text += " · holiday"
     return text
 
 
@@ -354,7 +357,8 @@ def clock_in(workspace_id, user, note=None, now=None):
             raise ValidationError({"detail": f"You already clocked in today at {at:%-I:%M %p}."})
         schedule = schedule_for(workspace_id, person.member_id, day)
         accepted, _ = time_off_on(cfg, person.member_id, day)
-        status = arrival_status(schedule, now, tz, excused=accepted is not None)
+        kind, _ = day_kind(workspace_id, schedule, day)
+        status = arrival_status(schedule, now, tz, excused=accepted is not None, kind=kind)
         if row is None:
             note_html = (
                 f"<p>Covered by time off {_link(accepted)}.</p>" if accepted and status == "excused_late" else ""
@@ -426,7 +430,8 @@ def relabel_after_edit(issue_id):
     if schedule is None or schedule.effective_from > row.date:
         return
     accepted, _ = time_off_on(cfg, row.person.member_id, row.date)
-    status = arrival_status(schedule, clock, zone(cfg), excused=accepted is not None)
+    kind, _ = day_kind(row.person.workspace_id, schedule, row.date)
+    status = arrival_status(schedule, clock, zone(cfg), excused=accepted is not None, kind=kind)
     if status != current:
         set_status(issue, status, cfg.recorder)
 
