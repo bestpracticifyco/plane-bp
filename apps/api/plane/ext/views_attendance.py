@@ -1,15 +1,16 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 Best Practicify LLC. This file is part of a fork of Plane (https://github.com/makeplane/plane).
 """Attendance API (flag ext.attendance). Everyone sees only their own days; HR (workspace Admins and
-Admins of a person's Staff file) sees the team view; workspace Admins edit the settings."""
+Admins of a person's Staff file) sees the team view; workspace Admins edit the settings, and Admins of the HR
+project edit the shift schedule, holidays and the people they manage."""
 
 import datetime as dt
 
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from . import attendance
-from .views import ADMIN, GUEST, ExtBaseView
+from .views import GUEST, ExtBaseView
 
 
 def _month(request):
@@ -57,12 +58,16 @@ class TeamAttendanceEndpoint(AttendanceBase):
 
 
 class AttendanceSettingsEndpoint(AttendanceBase):
+    def access(self, ws):
+        access = attendance.settings_access(ws.id, self.request.user)
+        if access is None:
+            raise PermissionDenied("You don't have the required permissions.")
+        return access
+
     def get(self, request, slug):
         ws = self.workspace(slug)
-        self.require_workspace_role(slug, ADMIN)
-        return Response(attendance.settings_json(ws.id))
+        return Response(attendance.settings_json(ws.id, request.user, self.access(ws)))
 
     def put(self, request, slug):
         ws = self.workspace(slug)
-        self.require_workspace_role(slug, ADMIN)
-        return Response(attendance.apply_settings(ws, request.user, request.data))
+        return Response(attendance.apply_settings(ws, request.user, request.data, self.access(ws)))

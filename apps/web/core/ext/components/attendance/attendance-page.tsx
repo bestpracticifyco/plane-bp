@@ -9,7 +9,6 @@ import { Button } from "@plane/propel/button";
 import { TOAST_TYPE, setToast } from "@plane/propel/toast";
 import { ExtService } from "../../services/ext.service";
 import type {
-  TExtAccessMatrix,
   TExtAttendanceDay,
   TExtAttendanceMe,
   TExtAttendanceSchedule,
@@ -410,15 +409,7 @@ function TeamAttendance({ workspaceSlug, initial }: { workspaceSlug: string; ini
 
 function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string; initial: TExtAttendanceSettings }) {
   const [draft, setDraft] = useState(initial);
-  const [matrix, setMatrix] = useState<TExtAccessMatrix | null>(null);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    service
-      .getAccess(workspaceSlug)
-      .then(setMatrix)
-      .catch(() => undefined);
-  }, [workspaceSlug]);
 
   const set = <K extends keyof TExtAttendanceSettings>(key: K, value: TExtAttendanceSettings[K]) =>
     setDraft((d) => ({ ...d, [key]: value }));
@@ -428,9 +419,10 @@ function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string;
       draft.schedules.map((s, j) => (j === i ? { ...s, ...patch } : s))
     );
 
-  const people = matrix?.people ?? [];
+  const people = initial.directory.members;
   const admins = people.filter((p) => p.workspace_role >= 20);
-  const projects = (matrix?.projects ?? []).filter((p) => !p.is_archived);
+  const projects = initial.directory.projects;
+  const isAdmin = initial.access === "admin";
   const name = (id: string | null) => people.find((p) => p.id === id)?.display_name ?? id ?? "";
 
   const save = async () => {
@@ -449,51 +441,54 @@ function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string;
     <div className="flex max-w-5xl flex-col gap-8 text-13">
       <section className="flex flex-col gap-3">
         <h3 className="text-14 font-semibold text-primary">General</h3>
-        <label className="flex items-center gap-3">
-          <span className="w-48 text-secondary">Timezone</span>
-          <input className={input} value={draft.timezone} onChange={(e) => set("timezone", e.target.value)} />
-        </label>
-        <label className="flex items-center gap-3">
-          <span className="w-48 text-secondary">Days are recorded by</span>
-          <select
-            className={input}
-            value={draft.recorder_id ?? ""}
-            onChange={(e) => set("recorder_id", e.target.value || null)}
-          >
-            <option value="">(me)</option>
-            {admins.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.display_name || p.email}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-3">
-          <span className="w-48 text-secondary">Time-off requests come from</span>
-          <select
-            className={input}
-            value={draft.time_off_project_id ?? ""}
-            onChange={(e) => set("time_off_project_id", e.target.value || null)}
-          >
-            <option value="">(none)</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-3">
-          <span className="w-48 text-secondary">Mark missed working days</span>
-          <input type="checkbox" checked={draft.mark_absent} onChange={(e) => set("mark_absent", e.target.checked)} />
-          <span className="text-secondary">from</span>
-          <input
-            type="date"
-            className={input}
-            value={draft.mark_absent_from ?? ""}
-            onChange={(e) => set("mark_absent_from", e.target.value || null)}
-          />
-        </label>
+        {!isAdmin && <p className="text-secondary">Only workspace Admins can change these.</p>}
+        <fieldset disabled={!isAdmin} className="flex flex-col gap-3 disabled:opacity-60">
+          <label className="flex items-center gap-3">
+            <span className="w-48 text-secondary">Timezone</span>
+            <input className={input} value={draft.timezone} onChange={(e) => set("timezone", e.target.value)} />
+          </label>
+          <label className="flex items-center gap-3">
+            <span className="w-48 text-secondary">Days are recorded by</span>
+            <select
+              className={input}
+              value={draft.recorder_id ?? ""}
+              onChange={(e) => set("recorder_id", e.target.value || null)}
+            >
+              <option value="">(me)</option>
+              {admins.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.display_name || p.email}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-3">
+            <span className="w-48 text-secondary">Time-off requests come from</span>
+            <select
+              className={input}
+              value={draft.time_off_project_id ?? ""}
+              onChange={(e) => set("time_off_project_id", e.target.value || null)}
+            >
+              <option value="">(none)</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-3">
+            <span className="w-48 text-secondary">Mark missed working days</span>
+            <input type="checkbox" checked={draft.mark_absent} onChange={(e) => set("mark_absent", e.target.checked)} />
+            <span className="text-secondary">from</span>
+            <input
+              type="date"
+              className={input}
+              value={draft.mark_absent_from ?? ""}
+              onChange={(e) => set("mark_absent_from", e.target.value || null)}
+            />
+          </label>
+        </fieldset>
       </section>
 
       <section className="flex flex-col gap-3">
@@ -682,82 +677,94 @@ function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string;
         <p className="text-secondary">
           Each person&apos;s days go into their own Staff file. They must be a member of it.
         </p>
-        {draft.people.map((p, i) => (
-          <div key={i} className="flex items-center gap-3">
-            <select
-              className={input}
-              value={p.member_id}
-              onChange={(e) =>
-                set(
-                  "people",
-                  draft.people.map((x, j) => (j === i ? { ...x, member_id: e.target.value } : x))
-                )
-              }
-            >
-              <option value="">Pick a person</option>
-              {people.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.display_name || m.email}
-                </option>
-              ))}
-            </select>
-            <select
-              className={input}
-              value={p.project_id}
-              onChange={(e) =>
-                set(
-                  "people",
-                  draft.people.map((x, j) => (j === i ? { ...x, project_id: e.target.value } : x))
-                )
-              }
-            >
-              <option value="">Pick their Staff file</option>
-              {projects.map((pr) => (
-                <option key={pr.id} value={pr.id}>
-                  {pr.name}
-                </option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1">
-              <input
-                type="checkbox"
-                checked={p.is_active}
+        {draft.people.map((p, i) =>
+          p.editable === false ? (
+            <div key={i} className="flex items-center gap-3 text-secondary">
+              <span className="w-64 truncate">{name(p.member_id)}</span>
+              <span className="w-64 truncate">{p.project_name}</span>
+              <span>
+                {p.is_active ? "Active" : "Not active"} ·{" "}
+                {p.mark_absent ? "Missed days marked" : "Clocking in optional"}
+              </span>
+              <span className="text-tertiary">(a workspace Admin can change this)</span>
+            </div>
+          ) : (
+            <div key={i} className="flex items-center gap-3">
+              <select
+                className={input}
+                value={p.member_id}
                 onChange={(e) =>
                   set(
                     "people",
-                    draft.people.map((x, j) => (j === i ? { ...x, is_active: e.target.checked } : x))
+                    draft.people.map((x, j) => (j === i ? { ...x, member_id: e.target.value } : x))
                   )
                 }
-              />
-              Active
-            </label>
-            <label className="flex items-center gap-1" title="Off: clocking in is optional; missed days stay blank">
-              <input
-                type="checkbox"
-                checked={p.mark_absent}
+              >
+                <option value="">Pick a person</option>
+                {people.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.display_name || m.email}
+                  </option>
+                ))}
+              </select>
+              <select
+                className={input}
+                value={p.project_id}
                 onChange={(e) =>
                   set(
                     "people",
-                    draft.people.map((x, j) => (j === i ? { ...x, mark_absent: e.target.checked } : x))
+                    draft.people.map((x, j) => (j === i ? { ...x, project_id: e.target.value } : x))
                   )
                 }
-              />
-              Mark missed days
-            </label>
-            <button
-              type="button"
-              className="text-danger-primary"
-              onClick={() =>
-                set(
-                  "people",
-                  draft.people.filter((_, j) => j !== i)
-                )
-              }
-            >
-              Remove
-            </button>
-          </div>
-        ))}
+              >
+                <option value="">Pick their Staff file</option>
+                {projects.map((pr) => (
+                  <option key={pr.id} value={pr.id}>
+                    {pr.name}
+                  </option>
+                ))}
+              </select>
+              <label className="flex items-center gap-1">
+                <input
+                  type="checkbox"
+                  checked={p.is_active}
+                  onChange={(e) =>
+                    set(
+                      "people",
+                      draft.people.map((x, j) => (j === i ? { ...x, is_active: e.target.checked } : x))
+                    )
+                  }
+                />
+                Active
+              </label>
+              <label className="flex items-center gap-1" title="Off: clocking in is optional; missed days stay blank">
+                <input
+                  type="checkbox"
+                  checked={p.mark_absent}
+                  onChange={(e) =>
+                    set(
+                      "people",
+                      draft.people.map((x, j) => (j === i ? { ...x, mark_absent: e.target.checked } : x))
+                    )
+                  }
+                />
+                Mark missed days
+              </label>
+              <button
+                type="button"
+                className="text-danger-primary"
+                onClick={() =>
+                  set(
+                    "people",
+                    draft.people.filter((_, j) => j !== i)
+                  )
+                }
+              >
+                Remove
+              </button>
+            </div>
+          )
+        )}
         <div>
           <Button
             variant="secondary"
@@ -784,7 +791,7 @@ function AttendanceSettings({ workspaceSlug, initial }: { workspaceSlug: string;
 
 type TTab = "me" | "team" | "settings";
 
-/** Clock in / Clock out, your own month, HR's team view and (workspace Admins) the rules. */
+/** Clock in / Clock out, your own month, HR's team view and the rules (workspace Admins; HR managers for the rota). */
 export function AttendancePage({ workspaceSlug }: { workspaceSlug: string }) {
   const [me, setMe] = useState<TExtAttendanceMe | null>(null);
   const [team, setTeam] = useState<TExtAttendanceTeam | null>(null);
