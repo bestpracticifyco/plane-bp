@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Best Practicify LLC. This file is part of a fork of Plane (https://github.com/makeplane/plane).
+# Title: bulk edit — resolve the CE bulk-operation gate and upsell to plane_ext
+# Insertion point: apps/web/vite.config.ts (resolve.alias, after the Next.js compatibility shims)
+# Upstream tag: v1.4.3
+# Hunks: 1  Added lines: 2  Deleted lines: 0
+# FR: FR-EXT-090 (bulk edit, flag ext.bulk_edit)
+# Owner approval: 2026-11-27 (gate H6 re-opened: 7 patch files, 17 hunks, 33 added lines)
+diff --git a/apps/web/vite.config.ts b/apps/web/vite.config.ts
+index f94ebce9d..e1aa961b8 100644
+--- a/apps/web/vite.config.ts
++++ b/apps/web/vite.config.ts
+@@ -28,6 +28,8 @@ export default defineConfig(() => ({
+       "next/link": path.resolve(__dirname, "app/compat/next/link.tsx"),
+       "next/navigation": path.resolve(__dirname, "app/compat/next/navigation.ts"),
+       "next/script": path.resolve(__dirname, "app/compat/next/script.tsx"),
++      "@/hooks/use-bulk-operation-status": path.resolve(__dirname, "core/ext/bulk/use-bulk-operation-status.ts"), // bp: bulk edit (ext.bulk_edit)
++      "@/components/issues/bulk-operations": path.resolve(__dirname, "core/ext/bulk/index.tsx"), // bp: bulk bar replaces the upsell
+     },
+     dedupe: ["react", "react-dom", "@headlessui/react"],
+   },

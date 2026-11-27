@@ -9,3 +9,4 @@ apps/web/app/root.tsx
 packages/constants/src/workspace.ts
 apps/api/requirements/base.txt
 apps/web/core/components/issues/peek-overview/properties.tsx
+apps/web/vite.config.ts

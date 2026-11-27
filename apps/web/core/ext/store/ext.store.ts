@@ -59,17 +59,22 @@ export class ExtStore {
     return this.flags[ws]?.[flag] ?? false;
   }
 
+  /** Feature flags for a workspace. */
+  loadFlags(ws: string, force = false) {
+    return this.once(
+      `flags:${ws}`,
+      async () => {
+        const f = await this.service.getFlags(ws);
+        runInAction(() => (this.flags[ws] = f));
+      },
+      force
+    );
+  }
+
   /** Flags + definitions for a workspace and bindings for a project. */
   loadProject(ws: string, projectId: string, force = false) {
     return Promise.all([
-      this.once(
-        `flags:${ws}`,
-        async () => {
-          const f = await this.service.getFlags(ws);
-          runInAction(() => (this.flags[ws] = f));
-        },
-        force
-      ),
+      this.loadFlags(ws, force),
       this.once(
         `defs:${ws}`,
         async () => {
