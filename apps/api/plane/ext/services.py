@@ -39,6 +39,7 @@ FLAG_DEFAULTS = {
     "ext.team_layout": False,  # shared views on new projects; members start from the team layout
     "ext.intake_events": False,  # webhook event when someone submits to a project's Intake (AI first-pass triage)
     "ext.attendance": False,  # Clock in / Clock out into each person's own Staff file
+    "ext.bulk_edit": False,  # select many work items and change status/priority/assignees/... at once
 }
 _FLAG_CACHE_SECONDS = 60
 
